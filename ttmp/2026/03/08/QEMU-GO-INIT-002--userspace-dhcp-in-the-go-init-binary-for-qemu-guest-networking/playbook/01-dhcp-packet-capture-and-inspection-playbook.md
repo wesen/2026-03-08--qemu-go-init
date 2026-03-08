@@ -12,13 +12,18 @@ Topics:
 DocType: playbook
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: internal/networking/network.go
+      Note: Runtime log lines referenced by the playbook
+    - Path: scripts/qemu-smoke.sh
+      Note: QEMU_PCAP-based packet capture entrypoint
 ExternalSources: []
 Summary: Step-by-step packet capture and inspection workflow for debugging DHCP inside the QEMU guest.
-LastUpdated: 2026-03-08T15:59:00-04:00
+LastUpdated: 2026-03-08T16:08:00-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # DHCP packet capture and inspection playbook
 
@@ -52,7 +57,17 @@ make initramfs
 
 ### 2. Start QEMU with packet capture enabled
 
-This command writes a pcap file at `/tmp/qemu-net.pcap` and keeps the serial console in the terminal.
+Preferred path: use the repo smoke script, because it also captures the guest serial log in `build/qemu-smoke.log`.
+
+```bash
+cd /home/manuel/code/wesen/2026-03-08--qemu-go-init
+QEMU_PCAP=/tmp/qemu-net.pcap \
+KERNEL_IMAGE=/tmp/qemu-vmlinuz \
+QEMU_HOST_PORT=18080 \
+make smoke
+```
+
+Equivalent direct QEMU command if you want the VM in the foreground:
 
 ```bash
 qemu-system-x86_64 \
@@ -92,6 +107,45 @@ grep -Ei 'networking:|dhcp:|fatal:' build/qemu-smoke.log
 
 If you are not using the smoke script, copy the QEMU serial output into a file or tmux pane capture and compare timestamps manually.
 
+### 6. Inspect the runtime watchdog logs around the blocking DHCP call
+
+The current guest runtime emits a DHCP wait watchdog every 5 seconds while the request is blocked.
+
+```bash
+grep -Ei 'requesting DHCP lease|still waiting for DHCP|DHCP wait|fallback|configured' build/qemu-smoke.log
+```
+
+This tells you whether the Go process is still alive inside `Request`, whether the request returned via timeout, and whether the QEMU static fallback path activated.
+
+### 7. Use a bounded outer timeout when the smoke script is expected to hang
+
+At the moment, the DHCP client can block long enough that it is useful to cap the whole smoke run from the host side:
+
+```bash
+timeout 75s env \
+  QEMU_PCAP=/tmp/qemu-net.pcap \
+  KERNEL_IMAGE=/tmp/qemu-vmlinuz \
+  QEMU_HOST_PORT=18080 \
+  make smoke
+```
+
+The current expected tail of `build/qemu-smoke.log` is:
+
+```text
+networking: requesting DHCP lease on eth0 xid=... deadline=45s
+networking: still waiting for DHCP on eth0 xid=... elapsed=5.008s
+...
+networking: DHCP wait on eth0 xid=... ended via context after 44.997s err=context deadline exceeded
+qemu-system-x86_64: terminating on signal 15 from pid ... (timeout)
+```
+
+This combination shows that:
+
+- the guest reached the DHCP request path,
+- the watchdog logs were active,
+- the inner DHCP context expired,
+- the outer host timeout cleaned up the still-running VM.
+
 ## Expected Good Flow
 
 You want to see the four DHCPv4 DORA packets:
@@ -123,6 +177,19 @@ Inspect:
 - QEMU serial log
 - `networking:` logs in `/init`
 - any `fatal:` line before HTTP startup
+- whether the watchdog repeats `still waiting for DHCP` without any matching DHCP packets in `/tmp/qemu-net.pcap`
+
+Observed on 2026-03-08 with `/tmp/qemu-vmlinuz`:
+
+- `tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp'` produced no packets
+- guest serial logs reached `networking: requesting DHCP lease on eth0 ...`
+- QEMU capture still showed IPv6 router solicitation and repeated ARP probes for `10.0.2.15`
+
+Interpretation:
+
+- the NIC path is alive enough for non-DHCP traffic to exist at the QEMU boundary
+- the current userspace DHCP request is not producing visible BOOTP/DHCP packets on that boundary
+- repeated ARP for `10.0.2.15` from `10.0.2.2` does not prove the guest configured IPv4 successfully
 
 ### Case 2: Discover only, no Offer
 
@@ -181,6 +248,23 @@ Then inspect:
 tail -n 120 build/qemu-smoke.log
 ```
 
+### Confirm that QEMU packet capture is actually active
+
+```bash
+ls -l /tmp/qemu-net.pcap build/qemu-smoke.log
+```
+
+If `build/qemu-smoke.log` shows `pcap=/tmp/qemu-net.pcap` in the first line and the file grows during boot, the capture hook is attached correctly.
+
+### Capture the full packet summary and save it for the ticket diary
+
+```bash
+tshark -r /tmp/qemu-net.pcap > /tmp/qemu-net.txt
+tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp' > /tmp/qemu-dhcp.txt
+```
+
+This is useful when you want the diary to record the exact “no DHCP seen” result without embedding the raw binary pcap.
+
 ### Keep the VM alive in tmux and capture repeatedly
 
 ```bash
@@ -214,3 +298,4 @@ This playbook is successful when you can answer all of these with evidence:
 
 - If packet capture becomes part of the standard smoke workflow, add a debug mode to `scripts/qemu-smoke.sh` that writes `/tmp/qemu-net.pcap` automatically on failure.
 - If the final design keeps the QEMU user-net fallback, this playbook should explicitly show how to distinguish the fallback path from a real DHCP success path in `/api/status`.
+- If the DHCP request continues to block without emitting packets, consider instrumenting the request path more aggressively or replacing the client invocation with a lower-level DHCP exchange for one debug build so each send/receive boundary is explicit in the logs.

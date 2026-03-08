@@ -12,13 +12,18 @@ Topics:
 DocType: reference
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: internal/networking/network.go
+      Note: DHCP watchdog
+    - Path: scripts/qemu-smoke.sh
+      Note: Bounded QEMU smoke workflow and packet capture reproduction
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-03-08T15:34:05.850448826-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Diary
 
@@ -274,4 +279,132 @@ and no corresponding offer or ACK appeared before timeout.
 make smoke QEMU_HOST_PORT=18080 KERNEL_IMAGE=/tmp/qemu-vmlinuz
 tail -n 120 build/qemu-smoke.log
 grep -Ei 'virtio|eth0|dhcp|offer|ack|fatal' build/qemu-smoke.log
+```
+
+## Step 4: Increase DHCP logging, validate packet capture, and backfill the debugging playbook
+
+This step turned the DHCP debug loop from inference into evidence. I added runtime logs that show the available interfaces, the pre-DHCP address/route state, the local DHCP socket binding, and a watchdog that emits progress every five seconds while the DHCP request is blocked.
+
+I also ran the new capture workflow under a bounded host-side timeout so the result was reproducible: the guest reaches the DHCP request call, no BOOTP/DHCP packets appear in the QEMU pcap, and the watchdog logs continue until the inner context expires.
+
+### Prompt Context
+
+**User prompt (verbatim):** "keep a diary as you work an dupdate th elaybook too, detailed. Backfill. Then continue"
+
+**Assistant interpretation:** Record the logging/playbook work in detail, backfill the missing debugging narrative, and then keep progressing the DHCP task.
+
+**Inferred user intent:** Make the ticket documentation continuation-safe for a future engineer while preserving forward momentum on the actual debugging work.
+
+**Commit (code):** ecaf7d366ba0dc6612145ab82da5c9fbc61aa375 — "Implement userspace DHCP guest networking"
+
+### What I did
+
+- Added interface inventory logging and pre-DHCP address/route logging in `/init`.
+- Added a DHCP wait watchdog that logs every 5 seconds until the request returns or the context expires.
+- Logged the local DHCP socket binding (`0.0.0.0:68`) and the total request deadline.
+- Re-ran `make test` after the logging changes.
+- Ran a bounded smoke reproduction with packet capture:
+
+```bash
+timeout 75s env QEMU_PCAP=/tmp/qemu-net.pcap KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18080 make smoke
+```
+
+- Read the resulting guest log and packet capture with:
+
+```bash
+tail -n 120 build/qemu-smoke.log
+tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp'
+tshark -r /tmp/qemu-net.pcap | tail -n 20
+```
+
+- Updated the packet-capture playbook to prefer the scripted `QEMU_PCAP` flow and to document the exact observed failure signature.
+
+### Why
+
+- The earlier logs showed where the guest entered DHCP, but not whether it remained alive, how long it stayed blocked, or whether packet capture matched the code-path assumptions.
+- The playbook needed to reflect the actual workflow that now works in the repo instead of only a hand-written foreground QEMU command.
+
+### What worked
+
+- The guest now emits enough logs to prove the request path is alive:
+
+```text
+networking: discovered links => lo(...) | eth0(...)
+networking: pre-dhcp addresses on eth0 => <none>
+networking: pre-dhcp routes on eth0 => <none>
+networking: opened DHCP UDP broadcast socket on eth0 local=0.0.0.0:68
+networking: requesting DHCP lease on eth0 xid=0xbac0e533 deadline=45s
+networking: still waiting for DHCP on eth0 xid=0xbac0e533 elapsed=5.008s
+...
+networking: DHCP wait on eth0 xid=0xbac0e533 ended via context after 44.997s err=context deadline exceeded
+```
+
+- `QEMU_PCAP=/tmp/qemu-net.pcap make smoke` successfully produced a guest-boundary pcap without needing a separate manual QEMU invocation.
+- `make test` stayed green after the logging changes.
+
+### What didn't work
+
+- `tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp'` produced no output at all.
+- The smoke run still did not become reachable on `127.0.0.1:18080`; the bounded run ended with:
+
+```text
+qemu-system-x86_64: terminating on signal 15 from pid 112491 (timeout)
+```
+
+- The pcap showed repeated ARP from `10.0.2.2` for `10.0.2.15` plus IPv6 router solicitation/advertisement traffic, but no DHCP DORA exchange.
+
+### What I learned
+
+- The QEMU `filter-dump` capture path is working and is therefore a reliable place to ask, “did any DHCP packet reach the guest NIC boundary?”
+- The current problem is more precise now: the Go process enters the DHCP request path and waits, but no DHCP packets are visible at the QEMU boundary during that wait.
+- Repeated ARP from QEMU’s user-net side does not imply successful guest IPv4 configuration.
+
+### What was tricky to build
+
+- The subtle part was separating “no DHCP packets are visible” from “the guest never reached DHCP code.” Without the watchdog logs, those two cases look similar from the host.
+- The smoke script needed a host-side outer timeout for reliable iteration because the inner DHCP request path can outlive the normal smoke expectations.
+
+### What warrants a second pair of eyes
+
+- Whether the current socket setup is correct for `nclient4` in this initramfs environment, since we now know the call blocks without emitting visible DHCP packets.
+- Whether the packet capture point can miss any part of the current request path, though the absence of BOOTP in `filter-dump` strongly suggests the send path itself is the next place to inspect.
+
+### What should be done in the future
+
+- Inspect the DHCP send path more directly, potentially by instrumenting or replacing the library request path for one debug iteration so every send/receive boundary is explicit.
+- Consider trying interface-bound socket behavior next if the current broad `0.0.0.0:68` binding remains silent.
+- Keep the host-side bounded reproduction command in the debugging loop until the DHCP request is either fixed or replaced.
+
+### Code review instructions
+
+- Start with [internal/networking/network.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/networking/network.go) and read the `Configure`, `logInterfaceInventory`, `logAppliedState`, and `logDHCPWait` functions.
+- Then read [scripts/qemu-smoke.sh](/home/manuel/code/wesen/2026-03-08--qemu-go-init/scripts/qemu-smoke.sh) to see how `QEMU_PCAP` is wired into the smoke workflow.
+- Validate with:
+
+```bash
+make test
+timeout 75s env QEMU_PCAP=/tmp/qemu-net.pcap KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18080 make smoke
+tail -n 120 build/qemu-smoke.log
+tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp'
+```
+
+### Technical details
+
+Relevant files:
+
+- [internal/networking/network.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/networking/network.go)
+- [scripts/qemu-smoke.sh](/home/manuel/code/wesen/2026-03-08--qemu-go-init/scripts/qemu-smoke.sh)
+- [playbook/01-dhcp-packet-capture-and-inspection-playbook.md](/home/manuel/code/wesen/2026-03-08--qemu-go-init/ttmp/2026/03/08/QEMU-GO-INIT-002--userspace-dhcp-in-the-go-init-binary-for-qemu-guest-networking/playbook/01-dhcp-packet-capture-and-inspection-playbook.md)
+
+Key observed command outputs:
+
+```text
+2026/03/08 20:08:55.699562 networking: requesting DHCP lease on eth0 xid=0xbac0e533 deadline=45s
+2026/03/08 20:09:00.719325 networking: still waiting for DHCP on eth0 xid=0xbac0e533 elapsed=5.008s
+2026/03/08 20:09:40.712573 networking: DHCP wait on eth0 xid=0xbac0e533 ended via context after 44.997s err=context deadline exceeded
+```
+
+```text
+$ tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp'
+# no output
 ```
