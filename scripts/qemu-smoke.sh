@@ -15,6 +15,7 @@ QEMU_PCAP=${QEMU_PCAP:-}
 QEMU_ENABLE_VIRTIO_RNG=${QEMU_ENABLE_VIRTIO_RNG:-1}
 QEMU_RNG_OBJECT=${QEMU_RNG_OBJECT:-rng-random,id=rng0,filename=/dev/urandom}
 QEMU_RNG_DEVICE=${QEMU_RNG_DEVICE:-virtio-rng-pci,rng=rng0}
+QEMU_REQUIRE_VIRTIO_RNG=${QEMU_REQUIRE_VIRTIO_RNG:-1}
 
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "KERNEL_IMAGE is not set and no readable /boot/vmlinuz-* image was found. Set KERNEL_IMAGE to a readable bzImage/vmlinuz path." >&2
@@ -91,4 +92,11 @@ for _ in $(seq 1 80); do
 done
 
 curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/" >/dev/null
-curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/api/status"
+STATUS_JSON=$(curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/api/status")
+printf '%s\n' "${STATUS_JSON}"
+
+case "${QEMU_REQUIRE_VIRTIO_RNG,,}" in
+  1|true|yes|on)
+    printf '%s\n' "${STATUS_JSON}" | rg -q '"virtioRngVisible": true'
+    ;;
+esac

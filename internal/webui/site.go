@@ -11,6 +11,7 @@ import (
 
 	"github.com/manuel/wesen/qemu-go-init/internal/boot"
 	"github.com/manuel/wesen/qemu-go-init/internal/entropy"
+	"github.com/manuel/wesen/qemu-go-init/internal/kmod"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
 )
 
@@ -18,24 +19,26 @@ import (
 var staticFiles embed.FS
 
 type Options struct {
-	ListenAddr string
-	Mounts     []boot.MountResult
-	Network    networking.Result
-	Entropy    entropy.Result
+	ListenAddr      string
+	Mounts          []boot.MountResult
+	Network         networking.Result
+	Entropy         entropy.Result
+	VirtioRNGModule kmod.Result
 }
 
 type statusResponse struct {
-	PID        int                `json:"pid"`
-	Hostname   string             `json:"hostname"`
-	GoVersion  string             `json:"goVersion"`
-	GOOS       string             `json:"goos"`
-	GOARCH     string             `json:"goarch"`
-	ListenAddr string             `json:"listenAddr"`
-	StartedAt  string             `json:"startedAt"`
-	Uptime     string             `json:"uptime"`
-	Mounts     []boot.MountResult `json:"mounts"`
-	Network    networking.Result  `json:"network"`
-	Entropy    entropy.Result     `json:"entropy"`
+	PID             int                `json:"pid"`
+	Hostname        string             `json:"hostname"`
+	GoVersion       string             `json:"goVersion"`
+	GOOS            string             `json:"goos"`
+	GOARCH          string             `json:"goarch"`
+	ListenAddr      string             `json:"listenAddr"`
+	StartedAt       string             `json:"startedAt"`
+	Uptime          string             `json:"uptime"`
+	Mounts          []boot.MountResult `json:"mounts"`
+	Network         networking.Result  `json:"network"`
+	Entropy         entropy.Result     `json:"entropy"`
+	VirtioRNGModule kmod.Result        `json:"virtioRngModule"`
 }
 
 func NewHandler(options Options) (http.Handler, error) {
@@ -49,17 +52,18 @@ func NewHandler(options Options) (http.Handler, error) {
 
 	status := func() statusResponse {
 		return statusResponse{
-			PID:        os.Getpid(),
-			Hostname:   hostname,
-			GoVersion:  runtime.Version(),
-			GOOS:       runtime.GOOS,
-			GOARCH:     runtime.GOARCH,
-			ListenAddr: options.ListenAddr,
-			StartedAt:  startedAt.Format(time.RFC3339),
-			Uptime:     time.Since(startedAt).Round(time.Second).String(),
-			Mounts:     options.Mounts,
-			Network:    options.Network,
-			Entropy:    options.Entropy,
+			PID:             os.Getpid(),
+			Hostname:        hostname,
+			GoVersion:       runtime.Version(),
+			GOOS:            runtime.GOOS,
+			GOARCH:          runtime.GOARCH,
+			ListenAddr:      options.ListenAddr,
+			StartedAt:       startedAt.Format(time.RFC3339),
+			Uptime:          time.Since(startedAt).Round(time.Second).String(),
+			Mounts:          options.Mounts,
+			Network:         options.Network,
+			Entropy:         options.Entropy,
+			VirtioRNGModule: options.VirtioRNGModule,
 		}
 	}
 

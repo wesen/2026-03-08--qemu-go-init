@@ -4,7 +4,9 @@ go 1.25.5
 
 require (
 	github.com/insomniacslk/dhcp v0.0.0-20260220084031-5adc3eb26f91
+	github.com/klauspost/compress v1.18.4
 	github.com/vishvananda/netlink v1.3.1
+	golang.org/x/sys v0.31.0
 )
 
 require (
@@ -16,5 +18,4 @@ require (
 	github.com/vishvananda/netns v0.0.5 // indirect
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
 )

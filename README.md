@@ -30,6 +30,12 @@ QEMU launch also accepts:
 - `QEMU_ENABLE_VIRTIO_RNG=0` to disable the default `virtio-rng` device in repo run paths
 - `QEMU_RNG_OBJECT=...` to override the QEMU RNG backend object
 - `QEMU_RNG_DEVICE=...` to override the attached RNG device
+- `QEMU_REQUIRE_VIRTIO_RNG=0` to let the smoke script skip the default assertion that the guest actually activates `virtio-rng`
+
+Initramfs creation also accepts:
+
+- `INITRAMFS_ENABLE_VIRTIO_RNG_MODULE=0` to skip embedding the `virtio_rng` kernel module
+- `INITRAMFS_VIRTIO_RNG_MODULE_SRC=/path/to/virtio-rng.ko.zst` to override the host module that gets unpacked into the initramfs as `/lib/modules/virtio_rng.ko`
 
 ## Key artifacts
 

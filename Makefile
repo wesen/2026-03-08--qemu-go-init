@@ -9,6 +9,8 @@ QEMU_APPEND ?= console=ttyS0 rdinit=/init
 QEMU_ENABLE_VIRTIO_RNG ?= 1
 QEMU_RNG_OBJECT ?= rng-random,id=rng0,filename=/dev/urandom
 QEMU_RNG_DEVICE ?= virtio-rng-pci,rng=rng0
+INITRAMFS_ENABLE_VIRTIO_RNG_MODULE ?= 1
+INITRAMFS_VIRTIO_RNG_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/drivers/char/hw_random/virtio-rng.ko.zst
 
 INIT_BIN := $(BUILD_DIR)/init
 INITRAMFS := $(BUILD_DIR)/initramfs.cpio.gz
@@ -49,4 +51,5 @@ $(INIT_BIN): $(shell find cmd internal -type f -name '*.go')
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags='-s -w' -o $(INIT_BIN) ./cmd/init
 
 $(INITRAMFS): $(INIT_BIN)
-	$(GO) run ./cmd/mkinitramfs -init-bin $(INIT_BIN) -output $(INITRAMFS)
+	$(GO) run ./cmd/mkinitramfs -init-bin $(INIT_BIN) -output $(INITRAMFS) \
+		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_VIRTIO_RNG_MODULE)),-virtio-rng-module-src "$(INITRAMFS_VIRTIO_RNG_MODULE_SRC)")

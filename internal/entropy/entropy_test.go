@@ -3,6 +3,7 @@ package entropy
 import (
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func TestProbeFromFSWithVirtioRNG(t *testing.T) {
@@ -42,5 +43,27 @@ func TestProbeFromFSMissingOptionalFiles(t *testing.T) {
 	}
 	if len(result.Warnings) < 2 {
 		t.Fatalf("expected warnings for missing files, got %#v", result.Warnings)
+	}
+}
+
+func TestWaitForVirtioRNGStopsWhenVisible(t *testing.T) {
+	probes := 0
+	result := waitForVirtioRNG(100*time.Millisecond, 0, func() Result {
+		probes++
+		if probes < 3 {
+			return Result{HWRNGDevice: true}
+		}
+		return Result{
+			HWRNGDevice:      true,
+			RNGCurrent:       "virtio-rng.0",
+			VirtioRNGVisible: true,
+		}
+	})
+
+	if !result.VirtioRNGVisible {
+		t.Fatalf("expected virtio-rng to become visible: %#v", result)
+	}
+	if probes != 3 {
+		t.Fatalf("got %d probes, want 3", probes)
 	}
 }

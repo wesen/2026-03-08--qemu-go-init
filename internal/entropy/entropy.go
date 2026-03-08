@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -13,6 +14,7 @@ const (
 	rngAvailablePath = "sys/class/misc/hw_random/rng_available"
 	rngCurrentPath   = "sys/class/misc/hw_random/rng_current"
 	hwrngDevicePath  = "dev/hwrng"
+	probeInterval    = 50 * time.Millisecond
 )
 
 type Result struct {
@@ -27,17 +29,7 @@ type Result struct {
 
 func Probe(logger *log.Logger) Result {
 	result := ProbeFromFS(os.DirFS("/"))
-	if logger != nil {
-		logger.Printf(
-			"entropy: entropy_avail=%s hwrng=%t rng_current=%q rng_available=%s virtio_rng_visible=%t warnings=%s",
-			formatEntropy(result),
-			result.HWRNGDevice,
-			emptyIfBlank(result.RNGCurrent, "<none>"),
-			emptyIfBlank(strings.Join(result.RNGAvailable, ","), "<none>"),
-			result.VirtioRNGVisible,
-			emptyIfBlank(strings.Join(result.Warnings, ","), "<none>"),
-		)
-	}
+	logResult(logger, "probe", result)
 	return result
 }
 
@@ -68,6 +60,14 @@ func ProbeFromFS(root fs.FS) Result {
 		result.Warnings = append(result.Warnings, "hwrng_device_missing")
 	}
 
+	return result
+}
+
+func WaitForVirtioRNG(logger *log.Logger, timeout time.Duration) Result {
+	result := waitForVirtioRNG(timeout, probeInterval, func() Result {
+		return ProbeFromFS(os.DirFS("/"))
+	})
+	logResult(logger, "probe-wait", result)
 	return result
 }
 
@@ -132,4 +132,43 @@ func emptyIfBlank(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func waitForVirtioRNG(timeout time.Duration, interval time.Duration, probe func() Result) Result {
+	if interval <= 0 {
+		interval = probeInterval
+	}
+
+	result := probe()
+	if result.VirtioRNGVisible || timeout <= 0 {
+		return result
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(interval)
+		result = probe()
+		if result.VirtioRNGVisible {
+			return result
+		}
+	}
+
+	return result
+}
+
+func logResult(logger *log.Logger, label string, result Result) {
+	if logger == nil {
+		return
+	}
+
+	logger.Printf(
+		"entropy: action=%s entropy_avail=%s hwrng=%t rng_current=%q rng_available=%s virtio_rng_visible=%t warnings=%s",
+		label,
+		formatEntropy(result),
+		result.HWRNGDevice,
+		emptyIfBlank(result.RNGCurrent, "<none>"),
+		emptyIfBlank(strings.Join(result.RNGAvailable, ","), "<none>"),
+		result.VirtioRNGVisible,
+		emptyIfBlank(strings.Join(result.Warnings, ","), "<none>"),
+	)
 }

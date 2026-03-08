@@ -282,9 +282,13 @@
         }
 
         const entropy = data.entropy || {};
+        const virtioRngModule = data.virtioRngModule || {};
         const entropyWarnings = Array.isArray(entropy.warnings) && entropy.warnings.length > 0
           ? entropy.warnings.join(", ")
           : "none";
+        const moduleState = virtioRngModule.loaded
+          ? (virtioRngModule.alreadyLoaded ? "already loaded" : "loaded")
+          : (virtioRngModule.error || virtioRngModule.step || "not attempted");
         document.getElementById("entropy-main").textContent =
           entropy.entropyAvailKnown
             ? `${entropy.entropyAvail} bits available`
@@ -295,6 +299,8 @@
         const entropyExtra = document.getElementById("entropy-extra");
         entropyExtra.innerHTML = "";
         const entropyRows = [
+          ["Kernel module", moduleState],
+          ["Module path", virtioRngModule.modulePath || "none"],
           ["virtio-rng visible", entropy.virtioRngVisible ? "yes" : "no"],
           ["Current backend", entropy.rngCurrent || "unknown"],
           ["Available backends", Array.isArray(entropy.rngAvailable) && entropy.rngAvailable.length > 0 ? entropy.rngAvailable.join(", ") : "unknown"],
