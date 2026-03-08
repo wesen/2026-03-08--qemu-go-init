@@ -9,3 +9,7 @@
 - `docmgr doctor --ticket QEMU-GO-INIT-004 --stale-after 30` passed after adding `ssh` to the vocabulary topics
 - Uploaded the ticket bundle to reMarkable at `/ai/2026/03/08/QEMU-GO-INIT-004` and verified the remote listing
 - Added `internal/sshapp` with Wish-backed config loading, lifecycle management, session rendering, and focused unit coverage (commit `b124f52`)
+- Wired the Wish service into the real boot path so PID 1 now starts HTTP and SSH together using a stable guest host-key path (commit `61fc6c8`)
+- Exposed SSH status through `/api/status` and the embedded operator webpage (commit `af961f5`)
+- Added SSH host forwarding to the QEMU workflow and validated the live guest through automated SSH smoke coverage (commit `efb942d`)
+- Re-ran `docmgr doctor`, refreshed the ticket diary/tasks, and force-updated the reMarkable bundle after implementation completion

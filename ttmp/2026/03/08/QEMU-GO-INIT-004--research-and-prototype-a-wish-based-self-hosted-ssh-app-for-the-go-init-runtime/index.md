@@ -36,7 +36,7 @@ This ticket researches how to add a self-hosted SSH application to the existing 
 
 Current status: **active**
 
-Current status detail: research complete; implementation tasks have been added and the repo integration work is starting.
+Current status detail: Wish is integrated into the guest runtime, exposed in the status UI, validated through QEMU smoke, and the refreshed bundle is uploaded to reMarkable.
 
 ## Topics
 

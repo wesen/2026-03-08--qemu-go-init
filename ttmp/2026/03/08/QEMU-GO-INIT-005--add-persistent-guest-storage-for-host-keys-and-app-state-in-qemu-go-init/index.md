@@ -38,7 +38,7 @@ The goal here is not to replace the initramfs boot model. The goal is to keep th
 
 Current status: **active**
 
-Current status detail: analysis and implementation plan in progress; no persistence code has been merged yet.
+Current status detail: analysis and implementation plan are documented, validated with `docmgr doctor`, and uploaded to reMarkable; no persistence code has been merged yet.
 
 ## Topics
 
