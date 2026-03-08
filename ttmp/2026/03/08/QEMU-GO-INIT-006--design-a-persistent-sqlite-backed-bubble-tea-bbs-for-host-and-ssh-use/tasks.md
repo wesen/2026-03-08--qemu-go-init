@@ -2,8 +2,8 @@
 
 ## In Progress
 
-- [ ] Update ticket `006` docs to reflect shared host-directory persistence via QEMU pass-through instead of storing the BBS database only inside `build/data.img`.
-- [ ] Implement a shared-state mount path in the guest using QEMU `9p`, including initramfs module packaging and guest mount logic.
+- [x] Update ticket `006` docs to reflect shared host-directory persistence via QEMU pass-through instead of storing the BBS database only inside `build/data.img`.
+- [x] Implement a shared-state mount path in the guest using QEMU `9p`, including initramfs module packaging and guest mount logic.
 - [ ] Add a SQLite-backed BBS store package using `modernc.org/sqlite` and initialize the schema automatically.
 - [ ] Add a reusable Bubble Tea BBS application package that can run both on a host TTY and over a Wish SSH session.
 - [ ] Add a host `cmd/bbs` binary that opens the same shared-state directory and launches the BBS locally.

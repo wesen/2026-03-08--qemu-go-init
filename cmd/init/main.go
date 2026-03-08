@@ -9,6 +9,7 @@ import (
 	"github.com/manuel/wesen/qemu-go-init/internal/entropy"
 	"github.com/manuel/wesen/qemu-go-init/internal/kmod"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
+	"github.com/manuel/wesen/qemu-go-init/internal/sharedstate"
 	"github.com/manuel/wesen/qemu-go-init/internal/sshapp"
 	"github.com/manuel/wesen/qemu-go-init/internal/storage"
 	"github.com/manuel/wesen/qemu-go-init/internal/webui"
@@ -23,6 +24,10 @@ func main() {
 	if err != nil {
 		logger.Printf("fatal: prepare storage: %v", err)
 		boot.Halt(logger)
+	}
+	sharedStateResult, err := sharedstate.Prepare(logger)
+	if err != nil {
+		logger.Printf("shared state unavailable: %v", err)
 	}
 	moduleResult := kmod.LoadVirtioRNG(logger)
 	entropyResult := entropy.Probe(logger)
@@ -59,6 +64,7 @@ func main() {
 		ListenAddr:      addr,
 		Mounts:          results,
 		Storage:         storageResult,
+		SharedState:     sharedStateResult,
 		Network:         networkResult,
 		Entropy:         entropyResult,
 		VirtioRNGModule: moduleResult,
@@ -69,7 +75,7 @@ func main() {
 		boot.Halt(logger)
 	}
 
-	logger.Printf("go init ready http=%s ssh=%s storage=%s", addr, sshStatus.ListenAddr, storageResult.MountPoint)
+	logger.Printf("go init ready http=%s ssh=%s storage=%s shared=%s", addr, sshStatus.ListenAddr, storageResult.MountPoint, sharedStateResult.MountPoint)
 	if err := boot.ServeHTTP(addr, handler, logger); err != nil {
 		logger.Printf("fatal: serve http: %v", err)
 		boot.Halt(logger)

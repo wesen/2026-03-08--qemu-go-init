@@ -14,11 +14,13 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-func TestWriteArchiveIncludesVirtioRNGModule(t *testing.T) {
+const testModuleGuestPath = "lib/modules/virtio_rng.ko"
+
+func TestWriteArchiveIncludesModule(t *testing.T) {
 	var compressed bytes.Buffer
 	moduleData := []byte("virtio-rng-module")
 	err := writeArchive(&compressed, time.Unix(1_741_398_400, 0).UTC(), []byte("init"), []archiveFile{{
-		Path:    virtioRNGModuleGuestPath,
+		Path:    testModuleGuestPath,
 		Data:    moduleData,
 		ModTime: time.Unix(1_741_398_401, 0).UTC(),
 		Mode:    0o644,
@@ -46,12 +48,12 @@ func TestWriteArchiveIncludesVirtioRNGModule(t *testing.T) {
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		names = append(names, entry.Name)
-		if entry.Name == virtioRNGModuleGuestPath && string(entry.Data) != string(moduleData) {
+		if entry.Name == testModuleGuestPath && string(entry.Data) != string(moduleData) {
 			t.Fatalf("got module data %q, want %q", entry.Data, moduleData)
 		}
 	}
 
-	for _, required := range []string{"lib", "lib/modules", virtioRNGModuleGuestPath} {
+	for _, required := range []string{"lib", "lib/modules", testModuleGuestPath} {
 		if !containsName(names, required) {
 			t.Fatalf("archive missing %s: %v", required, names)
 		}
@@ -94,6 +96,19 @@ func TestParentDirectories(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("got %v, want %v", got, want)
 		}
+	}
+}
+
+func TestParseModuleSpec(t *testing.T) {
+	guestPath, hostPath, err := parseModuleSpec("/lib/modules/virtio_rng.ko=/tmp/virtio_rng.ko.zst")
+	if err != nil {
+		t.Fatalf("parseModuleSpec: %v", err)
+	}
+	if guestPath != "/lib/modules/virtio_rng.ko" {
+		t.Fatalf("unexpected guest path: %q", guestPath)
+	}
+	if hostPath != "/tmp/virtio_rng.ko.zst" {
+		t.Fatalf("unexpected host path: %q", hostPath)
 	}
 }
 

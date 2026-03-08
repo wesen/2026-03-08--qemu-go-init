@@ -13,6 +13,7 @@ import (
 	"github.com/manuel/wesen/qemu-go-init/internal/entropy"
 	"github.com/manuel/wesen/qemu-go-init/internal/kmod"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
+	"github.com/manuel/wesen/qemu-go-init/internal/sharedstate"
 	"github.com/manuel/wesen/qemu-go-init/internal/sshapp"
 	"github.com/manuel/wesen/qemu-go-init/internal/storage"
 )
@@ -24,6 +25,7 @@ type Options struct {
 	ListenAddr      string
 	Mounts          []boot.MountResult
 	Storage         storage.Result
+	SharedState     sharedstate.Result
 	Network         networking.Result
 	Entropy         entropy.Result
 	VirtioRNGModule kmod.Result
@@ -41,6 +43,7 @@ type statusResponse struct {
 	Uptime          string             `json:"uptime"`
 	Mounts          []boot.MountResult `json:"mounts"`
 	Storage         storage.Result     `json:"storage"`
+	SharedState     sharedstate.Result `json:"sharedState"`
 	Network         networking.Result  `json:"network"`
 	Entropy         entropy.Result     `json:"entropy"`
 	VirtioRNGModule kmod.Result        `json:"virtioRngModule"`
@@ -73,6 +76,7 @@ func NewHandler(options Options) (http.Handler, error) {
 			Uptime:          time.Since(startedAt).Round(time.Second).String(),
 			Mounts:          options.Mounts,
 			Storage:         options.Storage,
+			SharedState:     options.SharedState,
 			Network:         options.Network,
 			Entropy:         options.Entropy,
 			VirtioRNGModule: options.VirtioRNGModule,

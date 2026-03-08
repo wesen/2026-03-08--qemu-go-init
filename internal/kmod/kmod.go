@@ -9,6 +9,11 @@ import (
 )
 
 const VirtioRNGModulePath = "/lib/modules/virtio_rng.ko"
+const (
+	NinePModulePath          = "/lib/modules/9p.ko"
+	NinePNetModulePath       = "/lib/modules/9pnet.ko"
+	NinePNetVirtioModulePath = "/lib/modules/9pnet_virtio.ko"
+)
 
 type Result struct {
 	Attempted     bool   `json:"attempted"`
@@ -26,6 +31,14 @@ var finitModule = unix.FinitModule
 
 func LoadVirtioRNG(logger *log.Logger) Result {
 	return ensureModule(VirtioRNGModulePath, logger, os.Stat, loadModuleFile)
+}
+
+func LoadNinePStack(logger *log.Logger) []Result {
+	return []Result{
+		ensureModule(NinePNetModulePath, logger, os.Stat, loadModuleFile),
+		ensureModule(NinePNetVirtioModulePath, logger, os.Stat, loadModuleFile),
+		ensureModule(NinePModulePath, logger, os.Stat, loadModuleFile),
+	}
 }
 
 func ensureModule(path string, logger *log.Logger, stat statFunc, loader moduleLoader) Result {

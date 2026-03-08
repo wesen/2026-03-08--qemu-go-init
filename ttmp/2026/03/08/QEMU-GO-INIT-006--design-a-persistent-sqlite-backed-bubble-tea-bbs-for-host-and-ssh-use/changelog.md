@@ -7,3 +7,5 @@
 - Confirmed that the Charmbracelet stack does not require external ncurses userland in the guest, but it does include Go-level terminal capability logic via `termenv`, `colorprofile`, and `xo/terminfo`.
 - Updated the storage plan from "SQLite only inside guest raw ext4 image" to "shared host directory mounted into the guest", because the latter supports a host-native BBS binary using the same content store.
 - Verified that `virtiofs` is not immediately usable in this environment because `virtiofsd` is absent, while the current kernel does provide `9p` support as loadable modules.
+- Added a generic initramfs module-packaging path so multiple kernel modules can be embedded without special-casing each one.
+- Added guest shared-state mount plumbing and QEMU `-virtfs` wiring for a `9p`-backed host-shared directory.

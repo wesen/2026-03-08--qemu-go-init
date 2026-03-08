@@ -102,14 +102,41 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/bbs-stack-probe-linux .
   - implement `9p` first
   - keep `virtiofs` as the cleaner later migration
 
+#### 2026-03-08 19:20 America/New_York
+
+- Implemented the first code slice for the new storage plan.
+- Added generic kernel-module packaging to:
+  - [cmd/mkinitramfs/main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/mkinitramfs/main.go)
+- Added guest shared-state mount support to:
+  - [internal/sharedstate/sharedstate.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sharedstate/sharedstate.go)
+- Extended the module loader with `9p` helpers in:
+  - [internal/kmod/kmod.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/kmod/kmod.go)
+- Wired QEMU shared-directory flags into:
+  - [Makefile](/home/manuel/code/wesen/2026-03-08--qemu-go-init/Makefile)
+  - [scripts/qemu-smoke.sh](/home/manuel/code/wesen/2026-03-08--qemu-go-init/scripts/qemu-smoke.sh)
+- Exposed shared-state status from:
+  - [cmd/init/main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go)
+  - [internal/webui/site.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/webui/site.go)
+- Added tests for the new initramfs flag shape and shared-state helpers.
+- Validation:
+
+```bash
+gofmt -w cmd/init/main.go cmd/mkinitramfs/main.go cmd/mkinitramfs/main_test.go internal/kmod/kmod.go internal/sharedstate/sharedstate.go internal/sharedstate/sharedstate_test.go internal/webui/site.go
+go test ./...
+```
+
+- Result:
+  - test suite passed
+  - no runtime smoke yet because the BBS application layer is still pending
+
 ## Usage Examples
 
 Current next steps:
 
-1. Patch the ticket documents with the updated storage plan.
-2. Implement shared-state mount support in the guest.
-3. Add the reusable SQLite store and Bubble Tea app packages.
-4. Replace the SSH transcript with the new BBS.
+1. Add the reusable SQLite store and Bubble Tea app packages.
+2. Add the host `cmd/bbs` entrypoint.
+3. Replace the SSH transcript with the new BBS.
+4. Validate host and guest flows together.
 
 ## Related
 

@@ -15,8 +15,6 @@ import (
 	"github.com/manuel/wesen/qemu-go-init/internal/initramfs"
 )
 
-const virtioRNGModuleGuestPath = "lib/modules/virtio_rng.ko"
-
 type archiveFile struct {
 	Path    string
 	Data    []byte
@@ -26,20 +24,32 @@ type archiveFile struct {
 
 func main() {
 	var (
-		initPath           = flag.String("init-bin", "", "path to the statically linked /init binary")
-		output             = flag.String("output", "", "path to the initramfs.cpio.gz output file")
-		virtioRNGModuleSrc = flag.String("virtio-rng-module-src", "", "optional path to a virtio_rng kernel module to include in the initramfs")
+		initPath = flag.String("init-bin", "", "path to the statically linked /init binary")
+		output   = flag.String("output", "", "path to the initramfs.cpio.gz output file")
+		modules  moduleFlags
 	)
+	flag.Var(&modules, "module-map", "optional guestPath=hostPath mapping for a kernel module to include in the initramfs")
 
 	flag.Parse()
 
-	if err := run(*initPath, *output, *virtioRNGModuleSrc); err != nil {
+	if err := run(*initPath, *output, modules); err != nil {
 		fmt.Fprintf(os.Stderr, "mkinitramfs: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(initPath string, output string, virtioRNGModuleSrc string) error {
+type moduleFlags []string
+
+func (m *moduleFlags) String() string {
+	return strings.Join(*m, ",")
+}
+
+func (m *moduleFlags) Set(value string) error {
+	*m = append(*m, value)
+	return nil
+}
+
+func run(initPath string, output string, modules moduleFlags) error {
 	if initPath == "" {
 		return fmt.Errorf("-init-bin is required")
 	}
@@ -57,7 +67,7 @@ func run(initPath string, output string, virtioRNGModuleSrc string) error {
 		return fmt.Errorf("stat init binary: %w", err)
 	}
 
-	extras, err := readExtraFiles(virtioRNGModuleSrc)
+	extras, err := readExtraFiles(modules)
 	if err != nil {
 		return err
 	}
@@ -79,33 +89,50 @@ func run(initPath string, output string, virtioRNGModuleSrc string) error {
 	return nil
 }
 
-func readExtraFiles(virtioRNGModuleSrc string) ([]archiveFile, error) {
-	if virtioRNGModuleSrc == "" {
+func readExtraFiles(moduleSpecs []string) ([]archiveFile, error) {
+	if len(moduleSpecs) == 0 {
 		return nil, nil
 	}
 
-	data, err := readModuleData(virtioRNGModuleSrc)
-	if err != nil {
-		return nil, err
-	}
+	files := make([]archiveFile, 0, len(moduleSpecs))
+	for _, spec := range moduleSpecs {
+		guestPath, hostPath, err := parseModuleSpec(spec)
+		if err != nil {
+			return nil, err
+		}
 
-	info, err := os.Stat(virtioRNGModuleSrc)
-	if err != nil {
-		return nil, fmt.Errorf("stat virtio-rng module: %w", err)
-	}
+		data, err := readModuleData(hostPath)
+		if err != nil {
+			return nil, err
+		}
 
-	return []archiveFile{{
-		Path:    virtioRNGModuleGuestPath,
-		Data:    data,
-		ModTime: info.ModTime().UTC(),
-		Mode:    0o644,
-	}}, nil
+		info, err := os.Stat(hostPath)
+		if err != nil {
+			return nil, fmt.Errorf("stat module %s: %w", hostPath, err)
+		}
+
+		files = append(files, archiveFile{
+			Path:    strings.TrimPrefix(guestPath, "/"),
+			Data:    data,
+			ModTime: info.ModTime().UTC(),
+			Mode:    0o644,
+		})
+	}
+	return files, nil
+}
+
+func parseModuleSpec(spec string) (string, string, error) {
+	parts := strings.SplitN(spec, "=", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid -module-map %q, expected guestPath=hostPath", spec)
+	}
+	return parts[0], parts[1], nil
 }
 
 func readModuleData(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read virtio-rng module: %w", err)
+		return nil, fmt.Errorf("read module %s: %w", path, err)
 	}
 	if !strings.HasSuffix(path, ".zst") {
 		return data, nil
@@ -119,7 +146,7 @@ func readModuleData(path string) ([]byte, error) {
 
 	decoded, err := decoder.DecodeAll(data, nil)
 	if err != nil {
-		return nil, fmt.Errorf("decompress virtio-rng module: %w", err)
+		return nil, fmt.Errorf("decompress module %s: %w", path, err)
 	}
 	return decoded, nil
 }

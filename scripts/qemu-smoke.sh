@@ -16,11 +16,16 @@ QEMU_NET_MODEL=${QEMU_NET_MODEL:-virtio-net-pci}
 QEMU_PCAP=${QEMU_PCAP:-}
 QEMU_ENABLE_STORAGE=${QEMU_ENABLE_STORAGE:-1}
 QEMU_DATA_IMAGE=${QEMU_DATA_IMAGE:-"${BUILD_DIR}/data.img"}
+QEMU_ENABLE_SHARED_STATE=${QEMU_ENABLE_SHARED_STATE:-1}
+QEMU_SHARED_STATE_HOST_PATH=${QEMU_SHARED_STATE_HOST_PATH:-"${BUILD_DIR}/shared-state"}
+QEMU_SHARED_STATE_MOUNT_TAG=${QEMU_SHARED_STATE_MOUNT_TAG:-hostshare}
+QEMU_SHARED_STATE_FSDEV_ID=${QEMU_SHARED_STATE_FSDEV_ID:-hostsharefs}
 QEMU_ENABLE_VIRTIO_RNG=${QEMU_ENABLE_VIRTIO_RNG:-1}
 QEMU_RNG_OBJECT=${QEMU_RNG_OBJECT:-rng-random,id=rng0,filename=/dev/urandom}
 QEMU_RNG_DEVICE=${QEMU_RNG_DEVICE:-virtio-rng-pci,rng=rng0}
 QEMU_REQUIRE_VIRTIO_RNG=${QEMU_REQUIRE_VIRTIO_RNG:-1}
 QEMU_REQUIRE_STORAGE=${QEMU_REQUIRE_STORAGE:-1}
+QEMU_REQUIRE_SHARED_STATE=${QEMU_REQUIRE_SHARED_STATE:-1}
 QEMU_PID=
 
 if [[ -z "${KERNEL_IMAGE}" ]]; then
@@ -48,6 +53,7 @@ case "${QEMU_ENABLE_STORAGE,,}" in
 esac
 
 mkdir -p "${BUILD_DIR}"
+mkdir -p "${QEMU_SHARED_STATE_HOST_PATH}"
 rm -f "${QEMU_LOG}"
 if [[ -n "${QEMU_PCAP}" ]]; then
   rm -f "${QEMU_PCAP}"
@@ -71,6 +77,19 @@ case "${QEMU_ENABLE_STORAGE,,}" in
     ;;
   *)
     QEMU_STORAGE=disabled
+    ;;
+esac
+
+case "${QEMU_ENABLE_SHARED_STATE,,}" in
+  1|true|yes|on)
+    QEMU_ARGS+=(
+      -virtfs "local,path=${QEMU_SHARED_STATE_HOST_PATH},mount_tag=${QEMU_SHARED_STATE_MOUNT_TAG},security_model=none,id=${QEMU_SHARED_STATE_FSDEV_ID}"
+      -device "virtio-9p-pci,fsdev=${QEMU_SHARED_STATE_FSDEV_ID},mount_tag=${QEMU_SHARED_STATE_MOUNT_TAG}"
+    )
+    QEMU_SHARED=enabled
+    ;;
+  *)
+    QEMU_SHARED=disabled
     ;;
 esac
 
@@ -99,7 +118,7 @@ case "${QEMU_ENABLE_VIRTIO_RNG,,}" in
     ;;
 esac
 
-echo "qemu-smoke: kernel=${KERNEL_IMAGE} http_host_port=${HOST_PORT} http_guest_port=${GUEST_PORT} ssh_host_port=${SSH_HOST_PORT} ssh_guest_port=${SSH_GUEST_PORT} storage=${QEMU_STORAGE} data_image=${QEMU_DATA_IMAGE} model=${QEMU_NET_MODEL} pcap=${QEMU_PCAP:-disabled} virtio_rng=${QEMU_VIRTIO_RNG}" >"${QEMU_LOG}"
+echo "qemu-smoke: kernel=${KERNEL_IMAGE} http_host_port=${HOST_PORT} http_guest_port=${GUEST_PORT} ssh_host_port=${SSH_HOST_PORT} ssh_guest_port=${SSH_GUEST_PORT} storage=${QEMU_STORAGE} data_image=${QEMU_DATA_IMAGE} shared=${QEMU_SHARED} shared_path=${QEMU_SHARED_STATE_HOST_PATH} model=${QEMU_NET_MODEL} pcap=${QEMU_PCAP:-disabled} virtio_rng=${QEMU_VIRTIO_RNG}" >"${QEMU_LOG}"
 
 cleanup() {
   if [[ -n "${QEMU_PID}" ]] && kill -0 "${QEMU_PID}" 2>/dev/null; then
@@ -181,6 +200,11 @@ assert_status() {
   case "${QEMU_REQUIRE_VIRTIO_RNG,,}" in
     1|true|yes|on)
       printf '%s\n' "${json}" | rg -q '"virtioRngVisible": true'
+      ;;
+  esac
+  case "${QEMU_REQUIRE_SHARED_STATE,,}" in
+    1|true|yes|on)
+      printf '%s\n' "${json}" | rg -U -P -q '"sharedState":\s*\{[\s\S]*?"mounted":\s*true'
       ;;
   esac
 }
