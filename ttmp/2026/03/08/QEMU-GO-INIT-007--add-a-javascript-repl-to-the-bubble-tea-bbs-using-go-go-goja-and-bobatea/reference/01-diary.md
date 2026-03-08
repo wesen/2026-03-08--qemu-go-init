@@ -105,6 +105,8 @@ github.com/tree-sitter/tree-sitter-javascript/bindings/go: build constraints exc
 16. Preserved the `bbs` JS API by exporting hidden Go callbacks and loading a tiny JS shim that converts JSON payloads into normal JavaScript arrays and objects.
 17. Re-ran `go test ./... -count=1`; it passed.
 18. Re-ran `make smoke KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18084 QEMU_SSH_HOST_PORT=10026`; it passed.
+19. Ran `docmgr doctor --ticket QEMU-GO-INIT-007 --stale-after 30`; it passed.
+20. Uploaded the ticket bundle to reMarkable and verified `QEMU-GO-INIT-007` under `/ai/2026/03/08/`.
 
 ## Related
 

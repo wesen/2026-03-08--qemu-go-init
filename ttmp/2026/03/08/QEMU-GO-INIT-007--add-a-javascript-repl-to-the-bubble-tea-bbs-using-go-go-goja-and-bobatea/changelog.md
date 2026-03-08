@@ -15,3 +15,5 @@
 - Pivoted to a CGO-free evaluator built directly on `go-go-goja/engine` while keeping Bobatea as the UI shell.
 - Full `go test ./...` passed after the pivot.
 - `make smoke KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18084 QEMU_SSH_HOST_PORT=10026` passed after the pivot.
+- `docmgr doctor --ticket QEMU-GO-INIT-007 --stale-after 30` passed cleanly.
+- Uploaded the ticket bundle to reMarkable at `/ai/2026/03/08/QEMU-GO-INIT-007`.

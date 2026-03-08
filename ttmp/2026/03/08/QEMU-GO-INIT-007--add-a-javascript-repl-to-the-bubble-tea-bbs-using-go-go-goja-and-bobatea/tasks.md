@@ -10,4 +10,4 @@
 - [x] Attach the REPL-enabled BBS in the host CLI path.
 - [x] Attach the REPL-enabled BBS in the Wish SSH path using a custom program handler.
 - [x] Validate host-native and SSH execution paths.
-- [ ] Update docs, diary, changelog, and upload the final bundle to reMarkable.
+- [x] Update docs, diary, changelog, and upload the final bundle to reMarkable.
