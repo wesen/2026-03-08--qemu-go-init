@@ -88,3 +88,58 @@ func TestDetailsFromLease(t *testing.T) {
 		t.Fatalf("resolver contents missing DHCP DNS server: %q", details.ResolverContents)
 	}
 }
+
+func TestNewDiscoveryWithTransactionID(t *testing.T) {
+	hwaddr := net.HardwareAddr{0x52, 0x54, 0x00, 0x12, 0x34, 0x56}
+	xid := dhcpv4.TransactionID{0xde, 0xad, 0xbe, 0xef}
+
+	discover, err := newDiscoveryWithTransactionID(hwaddr, xid, dhcpv4.WithBroadcast(true))
+	if err != nil {
+		t.Fatalf("newDiscoveryWithTransactionID: %v", err)
+	}
+
+	if got := discover.TransactionID; got != xid {
+		t.Fatalf("transaction ID = %s, want %s", got, xid)
+	}
+	if got := discover.MessageType(); got != dhcpv4.MessageTypeDiscover {
+		t.Fatalf("message type = %s, want %s", got, dhcpv4.MessageTypeDiscover)
+	}
+	if got := discover.ClientHWAddr.String(); got != hwaddr.String() {
+		t.Fatalf("client hw addr = %s, want %s", got, hwaddr)
+	}
+	if !discover.IsBroadcast() {
+		t.Fatal("discover packet should be broadcast")
+	}
+}
+
+func TestNewRequestFromOfferWithTransactionID(t *testing.T) {
+	hwaddr := net.HardwareAddr{0x52, 0x54, 0x00, 0x12, 0x34, 0x56}
+	xid := dhcpv4.TransactionID{0xca, 0xfe, 0xba, 0xbe}
+	serverID := net.IPv4(10, 0, 2, 2)
+	offer := &dhcpv4.DHCPv4{
+		ClientHWAddr: hwaddr,
+		YourIPAddr:   net.IPv4(10, 0, 2, 15),
+	}
+	offer.UpdateOption(dhcpv4.OptServerIdentifier(serverID))
+
+	request, err := newRequestFromOfferWithTransactionID(offer, xid, dhcpv4.WithBroadcast(true))
+	if err != nil {
+		t.Fatalf("newRequestFromOfferWithTransactionID: %v", err)
+	}
+
+	if got := request.TransactionID; got != xid {
+		t.Fatalf("transaction ID = %s, want %s", got, xid)
+	}
+	if got := request.MessageType(); got != dhcpv4.MessageTypeRequest {
+		t.Fatalf("message type = %s, want %s", got, dhcpv4.MessageTypeRequest)
+	}
+	if got := request.RequestedIPAddress().String(); got != "10.0.2.15" {
+		t.Fatalf("requested IP = %s, want 10.0.2.15", got)
+	}
+	if got := request.ServerIdentifier().String(); got != serverID.String() {
+		t.Fatalf("server identifier = %s, want %s", got, serverID)
+	}
+	if !request.IsBroadcast() {
+		t.Fatal("request packet should be broadcast")
+	}
+}

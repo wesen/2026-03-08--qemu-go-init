@@ -13,13 +13,12 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	"github.com/insomniacslk/dhcp/dhcpv4/nclient4"
+	"github.com/insomniacslk/dhcp/iana"
 	"github.com/vishvananda/netlink"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -78,6 +77,12 @@ type leaseDetails struct {
 	RenewalTime      time.Duration
 	RebindingTime    time.Duration
 	ResolverContents string
+}
+
+type loggingPacketConn struct {
+	net.PacketConn
+	logger *log.Logger
+	label  string
 }
 
 func LoadConfigFromEnv() Config {
@@ -153,13 +158,18 @@ func Configure(logger *log.Logger) (Result, error) {
 	}
 	logAppliedState(logger, link, "pre-dhcp")
 
-	dhcpConn, err := newDHCPBroadcastConn(attrs.Name)
+	rawConn, err := nclient4.NewRawUDPConn(attrs.Name, nclient4.ClientPort)
 	if err != nil {
-		err = fmt.Errorf("open DHCP socket on %s: %w", attrs.Name, err)
+		err = fmt.Errorf("open raw DHCP socket on %s: %w", attrs.Name, err)
 		result.Error = err.Error()
 		return result, err
 	}
-	logger.Printf("networking: opened DHCP UDP broadcast socket on %s local=%s", attrs.Name, dhcpConn.LocalAddr())
+	dhcpConn := loggingPacketConn{
+		PacketConn: rawConn,
+		logger:     logger,
+		label:      fmt.Sprintf("dhcp-raw(%s)", attrs.Name),
+	}
+	logger.Printf("networking: opened raw DHCP socket on %s local=%s", attrs.Name, dhcpConn.LocalAddr())
 
 	dhcpClient, err := nclient4.NewWithConn(dhcpConn, attrs.HardwareAddr,
 		nclient4.WithTimeout(cfg.Timeout),
@@ -182,10 +192,7 @@ func Configure(logger *log.Logger) (Result, error) {
 	requestDone := make(chan struct{})
 	defer close(requestDone)
 	go logDHCPWait(logger, ctx, requestDone, attrs.Name, xid)
-	lease, err := dhcpClient.Request(ctx,
-		dhcpv4.WithBroadcast(true),
-		dhcpv4.WithTransactionID(xid),
-	)
+	lease, err := requestLease(ctx, dhcpClient, attrs.HardwareAddr, xid)
 	var details leaseDetails
 	if err != nil {
 		result.DHCPError = err.Error()
@@ -519,6 +526,128 @@ func logDHCPWait(logger *log.Logger, ctx context.Context, done <-chan struct{}, 
 	}
 }
 
+func requestLease(ctx context.Context, client *nclient4.Client, hwaddr net.HardwareAddr, xid dhcpv4.TransactionID) (*nclient4.Lease, error) {
+	discover, err := newDiscoveryWithTransactionID(hwaddr, xid,
+		dhcpv4.WithBroadcast(true),
+		dhcpv4.WithOption(dhcpv4.OptMaxMessageSize(nclient4.MaxMessageSize)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create a discovery request: %w", err)
+	}
+
+	offer, err := client.SendAndRead(ctx, client.RemoteAddr(), discover, nclient4.IsMessageType(dhcpv4.MessageTypeOffer))
+	if err != nil {
+		return nil, fmt.Errorf("got an error while the discovery request: %w", err)
+	}
+
+	request, err := newRequestFromOfferWithTransactionID(offer, xid,
+		dhcpv4.WithBroadcast(true),
+		dhcpv4.WithOption(dhcpv4.OptMaxMessageSize(nclient4.MaxMessageSize)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create a request: %w", err)
+	}
+
+	response, err := client.SendAndRead(ctx, client.RemoteAddr(), request, nclient4.IsAll(
+		nclient4.IsCorrectServer(offer.ServerIdentifier()),
+		nclient4.IsMessageType(dhcpv4.MessageTypeAck, dhcpv4.MessageTypeNak),
+	))
+	if err != nil {
+		return nil, fmt.Errorf("got an error while processing the request: %w", err)
+	}
+
+	if response.MessageType() == dhcpv4.MessageTypeNak {
+		return nil, &nclient4.ErrNak{
+			Offer: offer,
+			Nak:   response,
+		}
+	}
+
+	return &nclient4.Lease{
+		ACK:          response,
+		Offer:        offer,
+		CreationTime: time.Now(),
+	}, nil
+}
+
+func newDiscoveryWithTransactionID(hwaddr net.HardwareAddr, xid dhcpv4.TransactionID, modifiers ...dhcpv4.Modifier) (*dhcpv4.DHCPv4, error) {
+	return newPacketWithTransactionID(xid, dhcpv4.PrependModifiers(modifiers,
+		dhcpv4.WithHwAddr(hwaddr),
+		dhcpv4.WithRequestedOptions(
+			dhcpv4.OptionSubnetMask,
+			dhcpv4.OptionRouter,
+			dhcpv4.OptionDomainName,
+			dhcpv4.OptionDomainNameServer,
+		),
+		dhcpv4.WithMessageType(dhcpv4.MessageTypeDiscover),
+	)...), nil
+}
+
+func newRequestFromOfferWithTransactionID(offer *dhcpv4.DHCPv4, xid dhcpv4.TransactionID, modifiers ...dhcpv4.Modifier) (*dhcpv4.DHCPv4, error) {
+	return newPacketWithTransactionID(xid, dhcpv4.PrependModifiers(modifiers,
+		dhcpv4.WithReply(offer),
+		dhcpv4.WithMessageType(dhcpv4.MessageTypeRequest),
+		dhcpv4.WithClientIP(offer.ClientIPAddr),
+		dhcpv4.WithOption(dhcpv4.OptRequestedIPAddress(offer.YourIPAddr)),
+		dhcpv4.WithOptionCopied(offer, dhcpv4.OptionServerIdentifier),
+		dhcpv4.WithRequestedOptions(
+			dhcpv4.OptionSubnetMask,
+			dhcpv4.OptionRouter,
+			dhcpv4.OptionDomainName,
+			dhcpv4.OptionDomainNameServer,
+		),
+	)...), nil
+}
+
+func newPacketWithTransactionID(xid dhcpv4.TransactionID, modifiers ...dhcpv4.Modifier) *dhcpv4.DHCPv4 {
+	packet := &dhcpv4.DHCPv4{
+		OpCode:        dhcpv4.OpcodeBootRequest,
+		HWType:        iana.HWTypeEthernet,
+		ClientHWAddr:  make(net.HardwareAddr, 6),
+		HopCount:      0,
+		TransactionID: xid,
+		NumSeconds:    0,
+		Flags:         0,
+		ClientIPAddr:  net.IPv4zero,
+		YourIPAddr:    net.IPv4zero,
+		ServerIPAddr:  net.IPv4zero,
+		GatewayIPAddr: net.IPv4zero,
+		Options:       make(dhcpv4.Options),
+	}
+	for _, mod := range modifiers {
+		mod(packet)
+	}
+	packet.TransactionID = xid
+	return packet
+}
+
+func (c loggingPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	n, addr, err := c.PacketConn.ReadFrom(b)
+	if c.logger != nil {
+		if err != nil {
+			c.logger.Printf("networking: %s read error: %v", c.label, err)
+		} else {
+			c.logger.Printf("networking: %s read %d bytes from %v", c.label, n, addr)
+		}
+	}
+	return n, addr, err
+}
+
+func (c loggingPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	if c.logger != nil {
+		c.logger.Printf("networking: %s write start bytes=%d addr=%v", c.label, len(b), addr)
+	}
+	n, err := c.PacketConn.WriteTo(b, addr)
+	if c.logger != nil {
+		if err != nil {
+			c.logger.Printf("networking: %s write error after %d bytes: %v", c.label, n, err)
+		} else {
+			c.logger.Printf("networking: %s write complete bytes=%d addr=%v", c.label, n, addr)
+		}
+	}
+	return n, err
+}
+
 func durationEnv(name string, fallback time.Duration) time.Duration {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
@@ -623,23 +752,6 @@ func nextTransactionID() dhcpv4.TransactionID {
 	return xid
 }
 
-func newDHCPBroadcastConn(iface string) (net.PacketConn, error) {
-	_ = iface
-	listenConfig := net.ListenConfig{
-		Control: func(network string, address string, raw syscall.RawConn) error {
-			var controlErr error
-			if err := raw.Control(func(fd uintptr) {
-				controlErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_BROADCAST, 1)
-			}); err != nil {
-				return err
-			}
-			return controlErr
-		},
-	}
-
-	return listenConfig.ListenPacket(context.Background(), "udp4", ":68")
-}
-
 type dhcpLogger struct {
 	logger *log.Logger
 }
@@ -656,8 +768,4 @@ func (l dhcpLogger) Printf(format string, v ...interface{}) {
 		return
 	}
 	l.logger.Printf("dhcp: "+format, v...)
-}
-
-func IsPermissionError(err error) bool {
-	return errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES)
 }
