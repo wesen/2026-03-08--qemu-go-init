@@ -13,5 +13,5 @@
 - [x] Create and refine a packet-capture/inspection playbook for DHCP debugging
 - [x] Validate the new logging and packet-capture workflow against `/tmp/qemu-vmlinuz`
 - [x] Finalize the detailed design doc, implementation guide, diary, and ticket bookkeeping
-- [ ] Validate with unit tests plus an end-to-end QEMU boot against `/tmp/qemu-vmlinuz`
+- [x] Validate with unit tests plus an end-to-end QEMU boot against `/tmp/qemu-vmlinuz`
 - [ ] Run `docmgr doctor` and upload the bundle to reMarkable

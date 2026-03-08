@@ -51,7 +51,7 @@ Create a detailed analysis / design / implementation guide that is very detailed
 
 **Inferred user intent:** Keep the existing QEMU demo architecture, but remove the kernel-config dependency for DHCP by making the init binary self-contained enough to bring up guest networking on its own.
 
-**Commit (code):** pending
+**Commit (code):** da96d8719854c27ebd75588fa67825b4b38d7088 — "Fix DHCP handshake in early boot"
 
 ### What I did
 
@@ -407,4 +407,137 @@ Key observed command outputs:
 ```text
 $ tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp'
 # no output
+```
+
+## Step 5: Replace the helper-based DHCP handshake and validate the full QEMU boot
+
+The previous debugging step narrowed the problem down to "the guest enters the DHCP path, but nothing reaches the wire." In this step I traced that stall into the upstream DHCP helper code, found that the helper still allocated a random transaction ID before modifiers were applied, and replaced the high-level `Request()` call with an explicit deterministic-xid Discover/Offer/Request/Ack handshake.
+
+That change resolved the boot end to end. The guest now emits DHCP packets, receives Offer and ACK from QEMU's built-in DHCP service, applies the IPv4 address and route, starts the HTTP server, and serves the status page through the host-forwarded port.
+
+### Prompt Context
+
+**User prompt (verbatim):** "can we on the go side maybe also go down a level, and see if ethernet works? would that make sesne?"
+
+**Assistant interpretation:** Investigate whether the failure is below UDP by using the library's lower-level raw Ethernet-capable path and continue if that exposes the actual blocker.
+
+**Inferred user intent:** Stop guessing about DHCP behavior and prove whether packets can be built and emitted from the guest at the Ethernet boundary.
+
+**Commit (code):** pending
+
+### What I did
+
+- Switched the DHCP socket setup from a plain `udp4 :68` socket to the library's raw interface path (`nclient4.NewRawUDPConn`).
+- Wrapped the raw packet connection with debug logging so every `WriteTo` and `ReadFrom` boundary is visible in the guest log.
+- Read the upstream DHCP client source in the Go module cache to understand the `Request()` helper path.
+- Confirmed that `nclient4.Request()` eventually calls `dhcpv4.NewDiscovery()`, and that `dhcpv4.NewDiscovery()` internally calls `dhcpv4.New()`, which generates a random transaction ID before modifiers are applied.
+- Replaced the helper-based `Request()` call with an explicit deterministic-xid handshake using:
+  - a custom Discover packet builder,
+  - `client.SendAndRead(..., IsMessageType(Offer))`,
+  - a custom Request-from-Offer builder,
+  - `client.SendAndRead(..., IsMessageType(Ack|Nak))`.
+- Re-ran:
+
+```bash
+make test
+timeout 75s env QEMU_PCAP=/tmp/qemu-net.pcap KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18080 make smoke
+tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp'
+tail -n 120 build/qemu-smoke.log
+```
+
+### Why
+
+- The raw socket test answered whether the guest could reach Ethernet-level packet IO, but the absence of any `WriteTo` logs proved the stall was still above the socket layer.
+- Once the upstream helper path was visible, the right fix was no longer "add more logs" but "avoid the hidden entropy-dependent constructor entirely."
+
+### What worked
+
+- The raw socket path worked and exposed a more precise symptom: the helper never reached `WriteTo`.
+- The deterministic handshake fixed the issue immediately.
+- The pcap now shows the full DHCP DORA exchange:
+
+```text
+12.601627 0.0.0.0 -> 255.255.255.255 DHCP Discover - Transaction ID 0xe9c60625
+12.601753 10.0.2.2 -> 255.255.255.255 DHCP Offer    - Transaction ID 0xe9c60625
+12.677508 0.0.0.0 -> 255.255.255.255 DHCP Request  - Transaction ID 0xe9c60625
+12.677528 10.0.2.2 -> 255.255.255.255 DHCP ACK      - Transaction ID 0xe9c60625
+```
+
+- The guest log now shows successful configuration and HTTP requests:
+
+```text
+networking: configured eth0 with 10.0.2.15/24 gateway=10.0.2.2 dns=10.0.2.3
+go init ready on :8080
+GET /healthz from 10.0.2.2:53694
+GET / from 10.0.2.2:53698
+GET /api/status from 10.0.2.2:53714
+```
+
+- The host saw a valid JSON response from `/api/status` with `"configured": true` and the expected QEMU user-net lease information.
+- A final `timeout 60s env QEMU_PCAP=/tmp/qemu-net.pcap KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18080 make smoke` run completed successfully without needing the outer timeout to fire.
+
+### What didn't work
+
+- Simply switching to the raw interface socket was not enough by itself; the code still stalled until the helper-based discovery constructor was removed.
+- The debug wrapper currently logs a benign close-time error:
+
+```text
+networking: dhcp-raw(eth0) read error: read packet 52:54:00:12:34:56: use of closed file
+```
+
+This happens when the client closes the conn after success.
+
+### What I learned
+
+- The hidden failure was not "DHCP send on raw socket is broken." It was "the high-level helper still allocates a random XID before any network IO happens."
+- Explicitly controlling the packet construction path is sometimes simpler and safer than trying to coerce a convenience helper into a minimal-initramfs environment.
+- QEMU user networking and host forwarding were working as designed all along; the guest-side DHCP client path was the missing piece.
+
+### What was tricky to build
+
+- The misleading part was that the code already passed `dhcpv4.WithTransactionID(xid)`, which looked like it should remove the entropy dependency. It did not, because modifiers were applied after the library had already generated a random XID internally.
+- The raw packet wrapper was necessary to prove where the blocking boundary really was. Without it, the hidden constructor bug would still look like a socket-level failure.
+
+### What warrants a second pair of eyes
+
+- The custom packet builders now duplicate small pieces of the upstream DHCP helper logic. They are straightforward, but they are worth reviewing against future upstream behavior changes.
+- The close-time read error from the debug wrapper is harmless today, but it could be worth quieting before this debug logging becomes permanent.
+
+### What should be done in the future
+
+- Decide whether to keep the raw packet conn wrapper logs permanently, gate them behind an env var, or remove them once the team is satisfied with the DHCP path.
+- Consider adding a focused unit test around the deterministic Discover/Request builders so future refactors do not reintroduce the helper-based entropy path.
+- If this approach proves stable, reduce or remove the QEMU static fallback path so success means "real DHCP worked."
+
+### Code review instructions
+
+- Start with [internal/networking/network.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/networking/network.go) and review:
+  - `requestLease`
+  - `newDiscoveryWithTransactionID`
+  - `newRequestFromOfferWithTransactionID`
+  - `newPacketWithTransactionID`
+  - `loggingPacketConn`
+- Compare the code behavior to the upstream helper path in the module cache:
+  - `/home/manuel/go/pkg/mod/github.com/insomniacslk/dhcp@v0.0.0-20260220084031-5adc3eb26f91/dhcpv4/nclient4/client.go`
+  - `/home/manuel/go/pkg/mod/github.com/insomniacslk/dhcp@v0.0.0-20260220084031-5adc3eb26f91/dhcpv4/dhcpv4.go`
+- Validate with:
+
+```bash
+make test
+timeout 75s env QEMU_PCAP=/tmp/qemu-net.pcap KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18080 make smoke
+tshark -r /tmp/qemu-net.pcap -Y 'bootp || dhcp'
+```
+
+### Technical details
+
+Key proof points from `build/qemu-smoke.log`:
+
+```text
+2026/03/08 20:20:11.859805 networking: dhcp-raw(eth0) write start bytes=300 addr=255.255.255.255:67
+2026/03/08 20:20:11.925482 dhcp: sent message DHCPv4 Message ... DHCP Message Type: DISCOVER
+2026/03/08 20:20:11.934069 dhcp: received message DHCPv4 Message ... DHCP Message Type: OFFER
+2026/03/08 20:20:11.950242 dhcp: sent message DHCPv4 Message ... DHCP Message Type: REQUEST
+2026/03/08 20:20:11.971370 dhcp: received message DHCPv4 Message ... DHCP Message Type: ACK
+2026/03/08 20:20:12.345060 networking: configured eth0 with 10.0.2.15/24 gateway=10.0.2.2 dns=10.0.2.3
+2026/03/08 20:20:12.463390 go init ready on :8080
 ```

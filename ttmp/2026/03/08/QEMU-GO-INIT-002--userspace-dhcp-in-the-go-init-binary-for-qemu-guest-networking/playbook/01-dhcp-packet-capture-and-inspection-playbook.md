@@ -19,13 +19,37 @@ RelatedFiles:
       Note: QEMU_PCAP-based packet capture entrypoint
 ExternalSources: []
 Summary: Step-by-step packet capture and inspection workflow for debugging DHCP inside the QEMU guest.
-LastUpdated: 2026-03-08T16:08:00-04:00
+LastUpdated: 2026-03-08T16:23:00-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
 
 
 # DHCP packet capture and inspection playbook
+
+## Current Status
+
+This workflow is now known-good in the repo.
+
+Resolved on 2026-03-08:
+
+- the guest successfully emits DHCP Discover and Request packets,
+- QEMU replies with Offer and ACK,
+- the Go init applies `10.0.2.15/24` with gateway `10.0.2.2`,
+- the host reaches:
+  - `http://127.0.0.1:18080/healthz`
+  - `http://127.0.0.1:18080/`
+  - `http://127.0.0.1:18080/api/status`
+
+Root cause of the earlier silent stall:
+
+- the previous code called the library helper `nclient4.Request(...)`
+- that helper eventually called `dhcpv4.NewDiscovery(...)`
+- `dhcpv4.NewDiscovery(...)` internally called `dhcpv4.New()`
+- `dhcpv4.New()` generated a random transaction ID before modifiers were applied
+- in this tiny initramfs, early-boot entropy was unreliable, so packet construction could stall before any DHCP frame was sent
+
+The fix was to drive the Discover/Offer/Request/Ack handshake explicitly with a deterministic transaction ID and the library's raw interface socket.
 
 ## Purpose
 
@@ -107,7 +131,7 @@ grep -Ei 'networking:|dhcp:|fatal:' build/qemu-smoke.log
 
 If you are not using the smoke script, copy the QEMU serial output into a file or tmux pane capture and compare timestamps manually.
 
-### 6. Inspect the runtime watchdog logs around the blocking DHCP call
+### 6. Inspect the runtime watchdog logs around the DHCP call
 
 The current guest runtime emits a DHCP wait watchdog every 5 seconds while the request is blocked.
 
@@ -115,11 +139,11 @@ The current guest runtime emits a DHCP wait watchdog every 5 seconds while the r
 grep -Ei 'requesting DHCP lease|still waiting for DHCP|DHCP wait|fallback|configured' build/qemu-smoke.log
 ```
 
-This tells you whether the Go process is still alive inside `Request`, whether the request returned via timeout, and whether the QEMU static fallback path activated.
+This tells you whether the Go process is still alive during DHCP, whether the request path is progressing, and whether the QEMU static fallback path activated.
 
-### 7. Use a bounded outer timeout when the smoke script is expected to hang
+### 7. Use a bounded outer timeout when you are reproducing a suspected stall
 
-At the moment, the DHCP client can block long enough that it is useful to cap the whole smoke run from the host side:
+The current code path succeeds without this, but a bounded outer timeout is still useful when you are testing a risky networking change:
 
 ```bash
 timeout 75s env \
@@ -129,7 +153,7 @@ timeout 75s env \
   make smoke
 ```
 
-The current expected tail of `build/qemu-smoke.log` is:
+The old failure signature looked like this:
 
 ```text
 networking: requesting DHCP lease on eth0 xid=... deadline=45s
@@ -139,7 +163,7 @@ networking: DHCP wait on eth0 xid=... ended via context after 44.997s err=contex
 qemu-system-x86_64: terminating on signal 15 from pid ... (timeout)
 ```
 
-This combination shows that:
+This combination meant that:
 
 - the guest reached the DHCP request path,
 - the watchdog logs were active,
@@ -161,6 +185,19 @@ After that, the guest should:
 - install a default route,
 - start the HTTP server,
 - respond on `http://127.0.0.1:18080/healthz`
+
+Known-good example observed on 2026-03-08:
+
+```text
+2026/03/08 20:20:11.859805 networking: dhcp-raw(eth0) write start bytes=300 addr=255.255.255.255:67
+2026/03/08 20:20:11.925482 dhcp: sent message DHCPv4 Message ... DHCP Message Type: DISCOVER
+2026/03/08 20:20:11.934069 dhcp: received message DHCPv4 Message ... DHCP Message Type: OFFER
+2026/03/08 20:20:11.950242 dhcp: sent message DHCPv4 Message ... DHCP Message Type: REQUEST
+2026/03/08 20:20:11.971370 dhcp: received message DHCPv4 Message ... DHCP Message Type: ACK
+2026/03/08 20:20:12.345060 networking: configured eth0 with 10.0.2.15/24 gateway=10.0.2.2 dns=10.0.2.3
+2026/03/08 20:20:12.463390 go init ready on :8080
+2026/03/08 20:20:13.282745 GET /healthz from 10.0.2.2:53694
+```
 
 ## Failure Interpretation
 
@@ -190,6 +227,7 @@ Interpretation:
 - the NIC path is alive enough for non-DHCP traffic to exist at the QEMU boundary
 - the current userspace DHCP request is not producing visible BOOTP/DHCP packets on that boundary
 - repeated ARP for `10.0.2.15` from `10.0.2.2` does not prove the guest configured IPv4 successfully
+- if there are also no `dhcp-raw(... ) write start` lines in `build/qemu-smoke.log`, the stall is probably above the socket layer
 
 ### Case 2: Discover only, no Offer
 
@@ -248,6 +286,15 @@ Then inspect:
 tail -n 120 build/qemu-smoke.log
 ```
 
+The most useful lines are currently:
+
+- `networking: discovered links => ...`
+- `networking: opened raw DHCP socket on eth0 local=...`
+- `networking: dhcp-raw(eth0) write start ...`
+- `dhcp: sent message DHCPv4 Message`
+- `dhcp: received message DHCPv4 Message`
+- `networking: configured eth0 with ...`
+
 ### Confirm that QEMU packet capture is actually active
 
 ```bash
@@ -296,6 +343,6 @@ This playbook is successful when you can answer all of these with evidence:
 
 ## Notes For Future Refinement
 
+- The temporary `dhcp-raw(... ) read error: ... use of closed file` line appears when the client closes its packet conn after a successful lease. It is expected with the current debug wrapper and should not be confused with a network failure.
 - If packet capture becomes part of the standard smoke workflow, add a debug mode to `scripts/qemu-smoke.sh` that writes `/tmp/qemu-net.pcap` automatically on failure.
 - If the final design keeps the QEMU user-net fallback, this playbook should explicitly show how to distinguish the fallback path from a real DHCP success path in `/api/status`.
-- If the DHCP request continues to block without emitting packets, consider instrumenting the request path more aggressively or replacing the client invocation with a lower-level DHCP exchange for one debug build so each send/receive boundary is explicit in the logs.

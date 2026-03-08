@@ -8,3 +8,4 @@
 - Validated unit tests and iterated on guest-networking experiments, including entropy-safe DHCP transaction IDs and alternate socket strategies
 - Added a packet-capture playbook to debug the remaining DHCP client path
 - Added DHCP watchdog logging, interface/state logging, and a bounded `timeout 75s` reproduction flow that proves the guest enters DHCP while no BOOTP packets appear in the QEMU capture
+- Replaced the helper-based DHCP request path with a deterministic-xid raw-socket handshake, which restored full DORA exchange and a working host-visible web server under QEMU user networking
