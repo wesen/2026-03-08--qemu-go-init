@@ -155,7 +155,7 @@ fetch_status() {
 run_ssh_session() {
   set +e
   local output
-  output=$(printf 'q' | timeout 10s ssh -tt \
+  output=$({ sleep 1; printf 'x6*7\r'; sleep 1; printf '\002q'; } | timeout 12s ssh -tt \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o PreferredAuthentications=none \
@@ -225,6 +225,8 @@ probe_boot() {
   printf '%s\n' "${ssh_output}" | rg -q 'qemu-go-init bbs'
   printf '%s\n' "${ssh_output}" | rg -q 'Shared-state Bubble Tea board|SSH BBS'
   printf '%s\n' "${ssh_output}" | rg -q '/var/lib/go-init/shared/bbs'
+  printf '%s\n' "${ssh_output}" | rg -q 'qemu-go-init JavaScript REPL'
+  printf '%s\n' "${ssh_output}" | rg -q '\b42\b'
 
   local host_key
   host_key=$(scan_host_key)

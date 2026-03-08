@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
@@ -23,12 +24,22 @@ func main() {
 	}
 	defer store.Close()
 
-	model := bbsapp.New(store, bbsapp.Options{
+	model, err := bbsapp.New(store, bbsapp.Options{
 		Title:     "qemu-go-init bbs",
 		Subtitle:  "Host-native Bubble Tea board",
 		StateRoot: store.Root(),
 	})
+	if err != nil {
+		logger.Fatalf("create bbs app: %v", err)
+	}
+	defer func() {
+		if closeErr := model.Close(); closeErr != nil {
+			logger.Printf("close bbs app: %v", closeErr)
+		}
+	}()
+
 	program := tea.NewProgram(model, tea.WithAltScreen())
+	model.AttachProgram(context.Background(), program)
 	if _, err := program.Run(); err != nil {
 		logger.Fatalf("run bbs: %v", err)
 	}

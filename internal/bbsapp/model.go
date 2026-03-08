@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/manuel/wesen/qemu-go-init/internal/bbsstore"
+	"github.com/manuel/wesen/qemu-go-init/internal/jsrepl"
 )
 
 type Store interface {
@@ -30,6 +31,7 @@ type mode int
 const (
 	modeBrowse mode = iota
 	modeCompose
+	modeREPL
 )
 
 type messagesLoadedMsg struct {
@@ -44,6 +46,7 @@ type messageCreatedMsg struct {
 
 type Model struct {
 	store         Store
+	repl          *jsrepl.Surface
 	title         string
 	subtitle      string
 	stateRoot     string
@@ -60,7 +63,7 @@ type Model struct {
 	focusIndex    int
 }
 
-func New(store Store, options Options) Model {
+func New(store Store, options Options) (*Model, error) {
 	author := textinput.New()
 	author.Prompt = "author> "
 	author.Placeholder = "anonymous"
@@ -77,8 +80,17 @@ func New(store Store, options Options) Model {
 	body.Focus()
 	body.SetHeight(10)
 
-	model := Model{
+	replSurface, err := jsrepl.New(store, jsrepl.Options{
+		StateRoot:     options.StateRoot,
+		DefaultAuthor: options.DefaultAuthor,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create javascript repl: %w", err)
+	}
+
+	model := &Model{
 		store:         store,
+		repl:          replSurface,
 		title:         fallback(options.Title, "qemu-go-init bbs"),
 		subtitle:      fallback(options.Subtitle, "Shared-state Bubble Tea board"),
 		stateRoot:     options.StateRoot,
@@ -90,21 +102,28 @@ func New(store Store, options Options) Model {
 		body:          body,
 	}
 	model.applyFocus()
-	return model
+	return model, nil
 }
 
-func (m Model) Init() tea.Cmd {
-	return loadMessagesCmd(m.store)
+func (m *Model) Init() tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	if m.repl == nil {
+		return loadMessagesCmd(m.store)
+	}
+	return tea.Batch(loadMessagesCmd(m.store), m.repl.Model().Init())
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = typed.Width
 		m.height = typed.Height
 		m.body.SetWidth(max(24, typed.Width-12))
 		m.body.SetHeight(max(8, typed.Height-16))
-		return m, nil
+		replCmd := m.updateREPLChild(typed)
+		return m, replCmd
 	case messagesLoadedMsg:
 		if typed.err != nil {
 			m.status = fmt.Sprintf("reload failed: %v", typed.err)
@@ -133,16 +152,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeCompose {
 			return m.updateCompose(typed)
 		}
+		if m.mode == modeREPL {
+			return m.updateREPL(typed)
+		}
 		return m.updateBrowse(typed)
 	default:
 		if m.mode == modeCompose {
 			return m.updateComposeWidgets(msg)
 		}
+		if m.mode == modeREPL {
+			return m.updateREPL(msg)
+		}
 		return m, nil
 	}
 }
 
-func (m Model) View() string {
+func (m *Model) View() string {
 	if m.width == 0 {
 		m.width = 100
 	}
@@ -157,12 +182,15 @@ func (m Model) View() string {
 		content := m.composeView()
 		return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
 	}
+	if m.mode == modeREPL && m.repl != nil {
+		return m.repl.Model().View()
+	}
 
 	content := m.browseView()
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
 }
 
-func (m Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -178,6 +206,9 @@ func (m Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeCompose
 		m.status = "Compose a new message"
 		m.applyFocus()
+	case "x":
+		m.mode = modeREPL
+		m.status = "Entered JavaScript REPL"
 	case "r":
 		m.status = "Reloading messages..."
 		return m, loadMessagesCmd(m.store)
@@ -185,7 +216,7 @@ func (m Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateCompose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateCompose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -213,7 +244,7 @@ func (m Model) updateCompose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.updateComposeWidgets(msg)
 }
 
-func (m Model) updateComposeWidgets(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateComposeWidgets(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	switch m.focusIndex {
 	case 0:
@@ -230,6 +261,23 @@ func (m Model) updateComposeWidgets(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) updateREPL(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "ctrl+b" {
+		m.mode = modeBrowse
+		m.status = "Returned from JavaScript REPL"
+		return m, nil
+	}
+	return m, m.updateREPLChild(msg)
+}
+
+func (m *Model) updateREPLChild(msg tea.Msg) tea.Cmd {
+	if m == nil || m.repl == nil {
+		return nil
+	}
+	_, cmd := m.repl.Model().Update(msg)
+	return cmd
 }
 
 func (m *Model) applyFocus() {
@@ -254,7 +302,7 @@ func (m *Model) resetComposer() {
 	m.applyFocus()
 }
 
-func (m Model) headerView() string {
+func (m *Model) headerView() string {
 	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).Render(m.title)
 	subtitle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(m.subtitle)
 	meta := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(fmt.Sprintf("state root: %s", fallback(m.stateRoot, "unknown")))
@@ -265,7 +313,7 @@ func (m Model) headerView() string {
 		Render(lipgloss.JoinVertical(lipgloss.Left, title, subtitle, meta))
 }
 
-func (m Model) browseView() string {
+func (m *Model) browseView() string {
 	listWidth := max(28, m.width/3)
 	detailWidth := max(36, m.width-listWidth-4)
 
@@ -299,7 +347,7 @@ func (m Model) browseView() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
 
-func (m Model) composeView() string {
+func (m *Model) composeView() string {
 	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("Tab to move focus. Ctrl+S saves. Esc cancels.")
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -315,8 +363,8 @@ func (m Model) composeView() string {
 	return box
 }
 
-func (m Model) footerView() string {
-	keys := "browse: j/k move, n new, r reload, q quit"
+func (m *Model) footerView() string {
+	keys := "browse: j/k move, n new, x js repl, r reload, q quit"
 	if m.mode == modeCompose {
 		keys = "compose: tab focus, ctrl+s save, esc cancel, ctrl+c quit"
 	}
@@ -329,7 +377,7 @@ func (m Model) footerView() string {
 		Render(lipgloss.JoinVertical(lipgloss.Left, status, refresh, keys))
 }
 
-func (m Model) selectedMessage() *bbsstore.Message {
+func (m *Model) selectedMessage() *bbsstore.Message {
 	if len(m.messages) == 0 || m.cursor < 0 || m.cursor >= len(m.messages) {
 		return nil
 	}
@@ -366,4 +414,18 @@ func max(a int, b int) int {
 		return a
 	}
 	return b
+}
+
+func (m *Model) AttachProgram(ctx context.Context, program *tea.Program) {
+	if m == nil || m.repl == nil {
+		return
+	}
+	m.repl.AttachProgram(ctx, program)
+}
+
+func (m *Model) Close() error {
+	if m == nil || m.repl == nil {
+		return nil
+	}
+	return m.repl.Close()
 }
