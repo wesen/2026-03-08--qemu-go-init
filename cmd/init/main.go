@@ -10,6 +10,7 @@ import (
 	"github.com/manuel/wesen/qemu-go-init/internal/kmod"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
 	"github.com/manuel/wesen/qemu-go-init/internal/sshapp"
+	"github.com/manuel/wesen/qemu-go-init/internal/storage"
 	"github.com/manuel/wesen/qemu-go-init/internal/webui"
 )
 
@@ -18,6 +19,11 @@ func main() {
 	boot.StartChildReaper(logger)
 
 	results := boot.PrepareFilesystem(logger)
+	storageResult, err := storage.Prepare(logger)
+	if err != nil {
+		logger.Printf("fatal: prepare storage: %v", err)
+		boot.Halt(logger)
+	}
 	moduleResult := kmod.LoadVirtioRNG(logger)
 	entropyResult := entropy.Probe(logger)
 	if moduleResult.Loaded {
@@ -52,6 +58,7 @@ func main() {
 	handler, err := webui.NewHandler(webui.Options{
 		ListenAddr:      addr,
 		Mounts:          results,
+		Storage:         storageResult,
 		Network:         networkResult,
 		Entropy:         entropyResult,
 		VirtioRNGModule: moduleResult,
@@ -62,7 +69,7 @@ func main() {
 		boot.Halt(logger)
 	}
 
-	logger.Printf("go init ready http=%s ssh=%s", addr, sshStatus.ListenAddr)
+	logger.Printf("go init ready http=%s ssh=%s storage=%s", addr, sshStatus.ListenAddr, storageResult.MountPoint)
 	if err := boot.ServeHTTP(addr, handler, logger); err != nil {
 		logger.Printf("fatal: serve http: %v", err)
 		boot.Halt(logger)

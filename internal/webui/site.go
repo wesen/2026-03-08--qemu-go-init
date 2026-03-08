@@ -14,6 +14,7 @@ import (
 	"github.com/manuel/wesen/qemu-go-init/internal/kmod"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
 	"github.com/manuel/wesen/qemu-go-init/internal/sshapp"
+	"github.com/manuel/wesen/qemu-go-init/internal/storage"
 )
 
 //go:embed static/*
@@ -22,6 +23,7 @@ var staticFiles embed.FS
 type Options struct {
 	ListenAddr      string
 	Mounts          []boot.MountResult
+	Storage         storage.Result
 	Network         networking.Result
 	Entropy         entropy.Result
 	VirtioRNGModule kmod.Result
@@ -38,6 +40,7 @@ type statusResponse struct {
 	StartedAt       string             `json:"startedAt"`
 	Uptime          string             `json:"uptime"`
 	Mounts          []boot.MountResult `json:"mounts"`
+	Storage         storage.Result     `json:"storage"`
 	Network         networking.Result  `json:"network"`
 	Entropy         entropy.Result     `json:"entropy"`
 	VirtioRNGModule kmod.Result        `json:"virtioRngModule"`
@@ -69,6 +72,7 @@ func NewHandler(options Options) (http.Handler, error) {
 			StartedAt:       startedAt.Format(time.RFC3339),
 			Uptime:          time.Since(startedAt).Round(time.Second).String(),
 			Mounts:          options.Mounts,
+			Storage:         options.Storage,
 			Network:         options.Network,
 			Entropy:         options.Entropy,
 			VirtioRNGModule: options.VirtioRNGModule,

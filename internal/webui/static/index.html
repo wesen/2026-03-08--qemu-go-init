@@ -194,6 +194,13 @@
       </section>
 
       <section class="panel" style="margin-top: 22px;">
+        <p class="label">Storage</p>
+        <p class="value" id="storage-main">...</p>
+        <p id="storage-detail">Waiting for storage...</p>
+        <div class="mounts" id="storage-extra"></div>
+      </section>
+
+      <section class="panel" style="margin-top: 22px;">
         <p class="label">Network</p>
         <p class="value" id="network-main">...</p>
         <p id="network-detail">Waiting for DHCP...</p>
@@ -246,6 +253,40 @@
 
           row.append(left, right);
           mounts.append(row);
+        }
+
+        const storage = data.storage || {};
+        document.getElementById("storage-main").textContent =
+          storage.enabled
+            ? `${storage.mountPoint || "pending"} ${storage.mounted ? "mounted" : storage.step || "pending"}`
+            : "disabled";
+        document.getElementById("storage-detail").textContent =
+          storage.enabled
+            ? `${storage.device || "unknown"} • ${storage.filesystem || "unknown"}`
+            : "Storage disabled";
+
+        const storageExtra = document.getElementById("storage-extra");
+        storageExtra.innerHTML = "";
+        const storageRows = [
+          ["Device ready", storage.deviceReady ? "yes" : "no"],
+          ["Directories", Array.isArray(storage.directories) ? storage.directories.join(", ") : "none"],
+          ["Step", storage.step || "unknown"],
+          ["Error", storage.error || "none"]
+        ];
+        for (const [label, value] of storageRows) {
+          const row = document.createElement("article");
+          row.className = "mount";
+
+          const left = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = label;
+          left.append(title);
+
+          const right = document.createElement("div");
+          right.textContent = value;
+
+          row.append(left, right);
+          storageExtra.append(row);
         }
 
         const network = data.network || {};

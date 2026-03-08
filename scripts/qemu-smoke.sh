@@ -20,6 +20,8 @@ QEMU_ENABLE_VIRTIO_RNG=${QEMU_ENABLE_VIRTIO_RNG:-1}
 QEMU_RNG_OBJECT=${QEMU_RNG_OBJECT:-rng-random,id=rng0,filename=/dev/urandom}
 QEMU_RNG_DEVICE=${QEMU_RNG_DEVICE:-virtio-rng-pci,rng=rng0}
 QEMU_REQUIRE_VIRTIO_RNG=${QEMU_REQUIRE_VIRTIO_RNG:-1}
+QEMU_REQUIRE_STORAGE=${QEMU_REQUIRE_STORAGE:-1}
+QEMU_PID=
 
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "KERNEL_IMAGE is not set and no readable /boot/vmlinuz-* image was found. Set KERNEL_IMAGE to a readable bzImage/vmlinuz path." >&2
@@ -98,55 +100,128 @@ case "${QEMU_ENABLE_VIRTIO_RNG,,}" in
 esac
 
 echo "qemu-smoke: kernel=${KERNEL_IMAGE} http_host_port=${HOST_PORT} http_guest_port=${GUEST_PORT} ssh_host_port=${SSH_HOST_PORT} ssh_guest_port=${SSH_GUEST_PORT} storage=${QEMU_STORAGE} data_image=${QEMU_DATA_IMAGE} model=${QEMU_NET_MODEL} pcap=${QEMU_PCAP:-disabled} virtio_rng=${QEMU_VIRTIO_RNG}" >"${QEMU_LOG}"
-"${QEMU_BIN}" "${QEMU_ARGS[@]}" >>"${QEMU_LOG}" 2>&1 &
-QEMU_PID=$!
 
 cleanup() {
-  if kill -0 "${QEMU_PID}" 2>/dev/null; then
+  if [[ -n "${QEMU_PID}" ]] && kill -0 "${QEMU_PID}" 2>/dev/null; then
     kill "${QEMU_PID}" 2>/dev/null || true
     wait "${QEMU_PID}" 2>/dev/null || true
+    QEMU_PID=
   fi
 }
 trap cleanup EXIT
 
-for _ in $(seq 1 80); do
-  if curl -fsS --max-time 1 "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null 2>&1; then
-    break
+start_vm() {
+  local label=$1
+  cleanup
+  printf '\n=== %s ===\n' "${label}" >>"${QEMU_LOG}"
+  "${QEMU_BIN}" "${QEMU_ARGS[@]}" >>"${QEMU_LOG}" 2>&1 &
+  QEMU_PID=$!
+}
+
+wait_for_http() {
+  for _ in $(seq 1 80); do
+    if curl -fsS --max-time 1 "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+fetch_status() {
+  curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/" >/dev/null
+  curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/api/status"
+}
+
+run_ssh_session() {
+  set +e
+  local output
+  output=$(timeout 10s ssh -tt \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -o PreferredAuthentications=none \
+    -o PubkeyAuthentication=no \
+    -o PasswordAuthentication=no \
+    -o ConnectTimeout=5 \
+    -o LogLevel=ERROR \
+    -p "${SSH_HOST_PORT}" \
+    127.0.0.1 2>&1 </dev/null)
+  local exit_code=$?
+  set -e
+
+  printf '%s\n' "${output}"
+  if [[ "${exit_code}" -ne 0 ]]; then
+    echo "ssh smoke failed with exit ${exit_code}" >&2
+    exit "${exit_code}"
   fi
-  sleep 0.5
-done
+}
 
-curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/" >/dev/null
-STATUS_JSON=$(curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/api/status")
-printf '%s\n' "${STATUS_JSON}"
+scan_host_key() {
+  local scan
+  for _ in $(seq 1 20); do
+    scan=$(ssh-keyscan -T 2 -p "${SSH_HOST_PORT}" 127.0.0.1 2>/dev/null | awk 'NF >= 3 { print $2" "$3; exit }')
+    if [[ -n "${scan}" ]]; then
+      printf '%s\n' "${scan}"
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
 
-set +e
-SSH_OUTPUT=$(timeout 10s ssh -tt \
-  -o StrictHostKeyChecking=no \
-  -o UserKnownHostsFile=/dev/null \
-  -o PreferredAuthentications=none \
-  -o PubkeyAuthentication=no \
-  -o PasswordAuthentication=no \
-  -o ConnectTimeout=5 \
-  -p "${SSH_HOST_PORT}" \
-  127.0.0.1 2>&1 </dev/null)
-SSH_EXIT=$?
-set -e
+assert_status() {
+  local json=$1
 
-printf '\n%s\n' "${SSH_OUTPUT}"
+  printf '%s\n' "${json}" | rg -U -P -q '"ssh":\s*\{[\s\S]*?"started":\s*true'
+  case "${QEMU_REQUIRE_STORAGE,,}" in
+    1|true|yes|on)
+      printf '%s\n' "${json}" | rg -U -P -q '"storage":\s*\{[\s\S]*?"mounted":\s*true'
+      ;;
+  esac
+  case "${QEMU_REQUIRE_VIRTIO_RNG,,}" in
+    1|true|yes|on)
+      printf '%s\n' "${json}" | rg -q '"virtioRngVisible": true'
+      ;;
+  esac
+}
 
-if [[ "${SSH_EXIT}" -ne 0 ]]; then
-  echo "ssh smoke failed with exit ${SSH_EXIT}" >&2
-  exit "${SSH_EXIT}"
+probe_boot() {
+  local label=$1
+  start_vm "${label}"
+  wait_for_http
+
+  local status_json
+  status_json=$(fetch_status)
+  printf '%s\n' "${status_json}" >&2
+  assert_status "${status_json}"
+
+  local ssh_output
+  ssh_output=$(run_ssh_session)
+  printf '\n%s\n' "${ssh_output}" >&2
+  printf '%s\n' "${ssh_output}" | rg -q 'qemu-go-init / wish'
+  printf '%s\n' "${ssh_output}" | rg -q 'Host key'
+
+  local host_key
+  host_key=$(scan_host_key)
+  if [[ -z "${host_key}" ]]; then
+    echo "failed to scan SSH host key" >&2
+    exit 1
+  fi
+
+  cleanup
+  sleep 1
+  printf '%s\n' "${host_key}"
+}
+
+FIRST_OUTPUT=$(probe_boot "boot-1")
+FIRST_KEY=$(printf '%s\n' "${FIRST_OUTPUT}" | tail -n 1)
+SECOND_OUTPUT=$(probe_boot "boot-2")
+SECOND_KEY=$(printf '%s\n' "${SECOND_OUTPUT}" | tail -n 1)
+
+printf '\nfirst host key:  %s\n' "${FIRST_KEY}"
+printf 'second host key: %s\n' "${SECOND_KEY}"
+
+if [[ "${FIRST_KEY}" != "${SECOND_KEY}" ]]; then
+  echo "persistent host key mismatch across reboot" >&2
+  exit 1
 fi
-
-printf '%s\n' "${SSH_OUTPUT}" | rg -q 'qemu-go-init / wish'
-printf '%s\n' "${SSH_OUTPUT}" | rg -q 'Host key'
-
-case "${QEMU_REQUIRE_VIRTIO_RNG,,}" in
-  1|true|yes|on)
-    printf '%s\n' "${STATUS_JSON}" | rg -q '"virtioRngVisible": true'
-    ;;
-esac
-
-printf '%s\n' "${STATUS_JSON}" | rg -q '"started": true'
