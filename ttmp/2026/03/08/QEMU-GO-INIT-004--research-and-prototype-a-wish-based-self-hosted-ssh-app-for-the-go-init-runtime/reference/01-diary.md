@@ -44,7 +44,7 @@ That distinction matters because “full SSH server” is ambiguous. Before reco
 
 **Inferred user intent:** Determine whether the existing single-binary init runtime can grow into a self-hosted SSH application without importing a traditional SSH daemon or broad guest userland.
 
-**Commit (code):** pending
+**Commit (code):** acabe28ddd7c2cdcbc794263a286f69fb8702839 — "Add Wish SSH research ticket and probe"
 
 ### What I did
 
@@ -114,7 +114,7 @@ The probe was valuable because it corrected one assumption immediately. Wish v1.
 
 **Inferred user intent:** Base the design on real current library behavior, not on stale memory or optimistic assumptions.
 
-**Commit (code):** pending
+**Commit (code):** acabe28ddd7c2cdcbc794263a286f69fb8702839 — "Add Wish SSH research ticket and probe"
 
 ### What I did
 
@@ -244,7 +244,7 @@ The most important part of this step was keeping the bookkeeping as rigorous as 
 
 **Inferred user intent:** Produce a complete research artifact, not just a local markdown draft.
 
-**Commit (code):** pending
+**Commit (code):** acabe28ddd7c2cdcbc794263a286f69fb8702839 — "Add Wish SSH research ticket and probe"
 
 ### What I did
 
