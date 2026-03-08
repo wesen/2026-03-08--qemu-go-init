@@ -9,6 +9,6 @@
 - [x] Expose entropy diagnostics in `/api/status` and the embedded webpage
 - [x] Validate the new entropy path with unit tests and an end-to-end QEMU smoke boot
 - [x] Commit the entropy runtime changes and validation results
-- [ ] Record the code commits, validation output, and kernel-module blocker in the diary and changelog
-- [ ] Decide and implement the next kernel-side step needed for actual virtio-rng activation in this module-less initramfs
-- [ ] Run `docmgr doctor` and upload the ticket bundle to reMarkable
+- [x] Record the code commits, validation output, and kernel-module blocker in the diary and changelog
+- [x] Decide and implement the next kernel-side step needed for actual virtio-rng activation in this module-less initramfs
+- [x] Run `docmgr doctor` and upload the ticket bundle to reMarkable

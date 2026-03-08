@@ -24,7 +24,7 @@ WhenToUse: ""
 
 ## Overview
 
-<!-- Provide a brief overview of the ticket, its goals, and current status -->
+This ticket now implements explicit early-boot entropy support for the demo guest. QEMU exposes `virtio-rng`, the initramfs carries a matching `virtio_rng` kernel module, the Go PID 1 runtime loads that module during boot, and the status API plus embedded webpage report the resulting entropy state.
 
 ## Key Links
 
@@ -34,6 +34,8 @@ WhenToUse: ""
 ## Status
 
 Current status: **active**
+
+The code work is complete, `docmgr doctor` passes cleanly, and the ticket bundle is uploaded to reMarkable at `/ai/2026/03/08/QEMU-GO-INIT-003`.
 
 ## Topics
 
