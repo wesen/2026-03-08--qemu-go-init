@@ -199,6 +199,13 @@
         <p id="network-detail">Waiting for DHCP...</p>
         <div class="mounts" id="network-extra"></div>
       </section>
+
+      <section class="panel" style="margin-top: 22px;">
+        <p class="label">Entropy</p>
+        <p class="value" id="entropy-main">...</p>
+        <p id="entropy-detail">Waiting for entropy probe...</p>
+        <div class="mounts" id="entropy-extra"></div>
+      </section>
     </main>
 
     <script>
@@ -272,6 +279,41 @@
 
           row.append(left, right);
           networkExtra.append(row);
+        }
+
+        const entropy = data.entropy || {};
+        const entropyWarnings = Array.isArray(entropy.warnings) && entropy.warnings.length > 0
+          ? entropy.warnings.join(", ")
+          : "none";
+        document.getElementById("entropy-main").textContent =
+          entropy.entropyAvailKnown
+            ? `${entropy.entropyAvail} bits available`
+            : "entropy unavailable";
+        document.getElementById("entropy-detail").textContent =
+          `Current ${entropy.rngCurrent || "none"} • /dev/hwrng ${entropy.hwrngDevice ? "present" : "missing"}`;
+
+        const entropyExtra = document.getElementById("entropy-extra");
+        entropyExtra.innerHTML = "";
+        const entropyRows = [
+          ["virtio-rng visible", entropy.virtioRngVisible ? "yes" : "no"],
+          ["Current backend", entropy.rngCurrent || "unknown"],
+          ["Available backends", Array.isArray(entropy.rngAvailable) && entropy.rngAvailable.length > 0 ? entropy.rngAvailable.join(", ") : "unknown"],
+          ["Warnings", entropyWarnings],
+        ];
+        for (const [label, value] of entropyRows) {
+          const row = document.createElement("article");
+          row.className = "mount";
+
+          const left = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = label;
+          left.append(title);
+
+          const right = document.createElement("div");
+          right.textContent = value;
+
+          row.append(left, right);
+          entropyExtra.append(row);
         }
       }
 

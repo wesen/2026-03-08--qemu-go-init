@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/manuel/wesen/qemu-go-init/internal/boot"
+	"github.com/manuel/wesen/qemu-go-init/internal/entropy"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
 	"github.com/manuel/wesen/qemu-go-init/internal/webui"
 )
@@ -19,12 +20,14 @@ func main() {
 		logger.Printf("fatal: configure networking: %v", err)
 		boot.Halt(logger)
 	}
+	entropyResult := entropy.Probe(logger)
 	addr := boot.HTTPAddress()
 
 	handler, err := webui.NewHandler(webui.Options{
 		ListenAddr: addr,
 		Mounts:     results,
 		Network:    networkResult,
+		Entropy:    entropyResult,
 	})
 	if err != nil {
 		logger.Printf("fatal: build handler: %v", err)
