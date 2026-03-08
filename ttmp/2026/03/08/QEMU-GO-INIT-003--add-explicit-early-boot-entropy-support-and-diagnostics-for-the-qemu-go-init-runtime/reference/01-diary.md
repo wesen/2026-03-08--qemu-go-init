@@ -541,3 +541,108 @@ The sanitized log line now reads:
 ```text
 [    8.584226] Invalid ELF header magic: non-ELF payload
 ```
+
+## Step 6: Add a full-system onboarding guide for the current repository state
+
+This step broadened the documentation from ticket-specific implementation notes into a single system guide that explains how the current repository works end to end. The earlier docs already described the entropy work in depth, but a new engineer still had to mentally merge the Makefile, initramfs builder, QEMU launcher, PID 1 runtime, status API, and webpage into one model.
+
+The new guide solves that by documenting the current system from host build to guest browser, with diagrams, pseudocode, API examples, environment variables, extension advice, and file-level references. The goal was to produce the document that an intern could read first before touching code.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, make a full documentation about the current system and how it works and how to use and extend it.
+
+Create a detailed analysis / design / implementation guide that is very detailed for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file
+  references.
+  It should be very clear and detailed. Store in the ticket and the nupload to remarkable."
+
+**Assistant interpretation:** Create a new long-form system guide inside the existing ticket, update ticket bookkeeping and diary state, validate the docs, and refresh the reMarkable bundle.
+
+**Inferred user intent:** Turn the ticket into a complete onboarding package for the whole repository, not just the entropy feature slice.
+
+**Commit (code):** pending
+
+### What I did
+
+- Added [02-full-system-architecture-usage-and-extension-guide-for-qemu-go-init.md](/home/manuel/code/wesen/2026-03-08--qemu-go-init/ttmp/2026/03/08/QEMU-GO-INIT-003--add-explicit-early-boot-entropy-support-and-diagnostics-for-the-qemu-go-init-runtime/design-doc/02-full-system-architecture-usage-and-extension-guide-for-qemu-go-init.md).
+- Wrote a full walkthrough of:
+  - the build path,
+  - the QEMU launch path,
+  - the guest boot order,
+  - each internal package,
+  - the API contract,
+  - runtime and build environment variables,
+  - extension patterns,
+  - test strategy,
+  - failure modes.
+- Updated the ticket index, tasks, and changelog so the new guide is visible from the top-level ticket view.
+
+### Why
+
+- The repo had enough feature-specific docs, but not enough system-level orientation.
+- A new engineer should not need to reconstruct the architecture by diffing multiple ticket documents.
+
+### What worked
+
+- The new guide now serves as the ticket's top-level onboarding document for the current system.
+- The document is file-anchored and matches the actual current repo state.
+- `docmgr doctor --ticket QEMU-GO-INIT-003 --stale-after 30` passed.
+- The reMarkable bundle upload succeeded after being refreshed to include the new guide.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The repo is small enough that a single long-form guide is still practical and valuable.
+- The key explanatory challenge is sequencing, not complexity: most confusion comes from not knowing what happens before what.
+
+### What was tricky to build
+
+- The hard part was deciding the right detail level. The guide needed to be detailed enough for an intern without turning into a line-by-line restatement of every file.
+
+### What warrants a second pair of eyes
+
+- If the runtime grows substantially, the single-guide format may need to split into a platform guide plus subsystem-specific references. For the current repo size, one central guide is still the right choice.
+
+### What should be done in the future
+
+- Keep the full-system guide updated whenever the main boot flow or API contract changes.
+
+### Code review instructions
+
+- Start with:
+  - [02-full-system-architecture-usage-and-extension-guide-for-qemu-go-init.md](/home/manuel/code/wesen/2026-03-08--qemu-go-init/ttmp/2026/03/08/QEMU-GO-INIT-003--add-explicit-early-boot-entropy-support-and-diagnostics-for-the-qemu-go-init-runtime/design-doc/02-full-system-architecture-usage-and-extension-guide-for-qemu-go-init.md)
+- Then verify the cited implementation files:
+  - [cmd/init/main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go)
+  - [cmd/mkinitramfs/main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/mkinitramfs/main.go)
+  - [internal/networking/network.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/networking/network.go)
+  - [internal/webui/site.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/webui/site.go)
+
+### Technical details
+
+Primary evidence-gathering commands:
+
+```bash
+nl -ba cmd/init/main.go | sed -n '1,220p'
+nl -ba cmd/mkinitramfs/main.go | sed -n '1,320p'
+nl -ba internal/boot/boot.go | sed -n '1,260p'
+nl -ba internal/networking/network.go | sed -n '1,320p'
+nl -ba internal/kmod/kmod.go | sed -n '1,220p'
+nl -ba internal/entropy/entropy.go | sed -n '1,260p'
+nl -ba internal/webui/site.go | sed -n '1,260p'
+nl -ba internal/webui/static/index.html | sed -n '1,360p'
+nl -ba Makefile | sed -n '1,220p'
+nl -ba scripts/qemu-smoke.sh | sed -n '1,240p'
+nl -ba README.md | sed -n '1,240p'
+```
+
+Publication commands:
+
+```bash
+docmgr doctor --ticket QEMU-GO-INIT-003 --stale-after 30
+remarquee upload bundle --dry-run ...
+remarquee upload bundle ... --force
+remarquee cloud ls /ai/2026/03/08/QEMU-GO-INIT-003 --long --non-interactive
+```

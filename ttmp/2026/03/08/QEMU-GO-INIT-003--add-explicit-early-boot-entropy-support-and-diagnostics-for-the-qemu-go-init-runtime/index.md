@@ -28,8 +28,10 @@ This ticket now implements explicit early-boot entropy support for the demo gues
 
 ## Key Links
 
-- **Related Files**: See frontmatter RelatedFiles field
-- **External Sources**: See frontmatter ExternalSources field
+- [Entropy design doc](./design-doc/01-early-boot-entropy-support-architecture-and-implementation-guide-for-the-qemu-go-init-runtime.md)
+- [Full system guide](./design-doc/02-full-system-architecture-usage-and-extension-guide-for-qemu-go-init.md)
+- [Implementation guide](./reference/02-implementation-guide.md)
+- [Diary](./reference/01-diary.md)
 
 ## Status
 

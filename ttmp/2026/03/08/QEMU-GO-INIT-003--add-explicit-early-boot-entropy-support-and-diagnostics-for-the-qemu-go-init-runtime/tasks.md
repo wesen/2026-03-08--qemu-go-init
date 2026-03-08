@@ -12,3 +12,4 @@
 - [x] Record the code commits, validation output, and kernel-module blocker in the diary and changelog
 - [x] Decide and implement the next kernel-side step needed for actual virtio-rng activation in this module-less initramfs
 - [x] Run `docmgr doctor` and upload the ticket bundle to reMarkable
+- [x] Add a full-system architecture, usage, and extension guide for the current repository state
