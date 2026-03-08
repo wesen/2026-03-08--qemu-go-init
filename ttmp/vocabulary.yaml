@@ -17,6 +17,8 @@ topics:
       description: Go programming language work
     - slug: networking
       description: Guest and host networking, DHCP, routing, sockets, and packet capture topics
+    - slug: ssh
+      description: Secure Shell protocols, servers, clients, and SSH-hosted applications
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
