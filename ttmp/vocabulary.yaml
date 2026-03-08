@@ -19,6 +19,10 @@ topics:
       description: Guest and host networking, DHCP, routing, sockets, and packet capture topics
     - slug: ssh
       description: Secure Shell protocols, servers, clients, and SSH-hosted applications
+    - slug: sqlite
+      description: SQLite database work
+    - slug: tui
+      description: Terminal user interfaces
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes

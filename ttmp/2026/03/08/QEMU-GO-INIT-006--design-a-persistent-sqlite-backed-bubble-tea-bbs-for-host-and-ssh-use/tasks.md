@@ -8,7 +8,7 @@
 - [x] Add a reusable Bubble Tea BBS application package that can run both on a host TTY and over a Wish SSH session.
 - [x] Add a host `cmd/bbs` binary that opens the same shared-state directory and launches the BBS locally.
 - [x] Replace the current SSH transcript app with the Bubble Tea BBS experience.
-- [ ] Add host and guest validation paths, update the diary continuously, and publish the ticket bundle to reMarkable.
+- [x] Add host and guest validation paths, update the diary continuously, and publish the ticket bundle to reMarkable.
 
 ## Notes
 

@@ -197,13 +197,40 @@ command -v script >/dev/null && timeout 20s script -qec 'printf q | go run ./cmd
   - the host `script`-based validation rendered correctly but timed out rather than exiting cleanly after piping `q`
   - the important part is that the board rendered and loaded the shared-state data path on the host
 
+#### 2026-03-08 20:00 America/New_York
+
+- Ran documentation validation and delivery commands:
+
+```bash
+docmgr vocab add --category topics --slug sqlite --description 'SQLite database work'
+docmgr vocab add --category topics --slug tui --description 'Terminal user interfaces'
+docmgr doctor --ticket QEMU-GO-INIT-006 --stale-after 30
+remarquee status
+remarquee cloud account --non-interactive
+remarquee upload bundle ttmp/2026/03/08/QEMU-GO-INIT-006--design-a-persistent-sqlite-backed-bubble-tea-bbs-for-host-and-ssh-use/index.md \
+  ttmp/2026/03/08/QEMU-GO-INIT-006--design-a-persistent-sqlite-backed-bubble-tea-bbs-for-host-and-ssh-use/design-doc/01-sqlite-backed-bubble-tea-bbs-architecture-analysis-and-implementation-guide-for-host-and-guest-runtimes.md \
+  ttmp/2026/03/08/QEMU-GO-INIT-006--design-a-persistent-sqlite-backed-bubble-tea-bbs-for-host-and-ssh-use/reference/02-implementation-guide.md \
+  ttmp/2026/03/08/QEMU-GO-INIT-006--design-a-persistent-sqlite-backed-bubble-tea-bbs-for-host-and-ssh-use/reference/01-diary.md \
+  ttmp/2026/03/08/QEMU-GO-INIT-006--design-a-persistent-sqlite-backed-bubble-tea-bbs-for-host-and-ssh-use/tasks.md \
+  ttmp/2026/03/08/QEMU-GO-INIT-006--design-a-persistent-sqlite-backed-bubble-tea-bbs-for-host-and-ssh-use/changelog.md \
+  --name 'QEMU-GO-INIT-006 bundle' \
+  --remote-dir '/ai/2026/03/08/QEMU-GO-INIT-006' \
+  --toc-depth 2 \
+  --force
+remarquee cloud ls /ai/2026/03/08/QEMU-GO-INIT-006 --long --non-interactive
+```
+
+- Results:
+  - `docmgr doctor` passed with no findings after adding the missing vocabulary entries
+  - `remarquee upload bundle` succeeded
+  - `remarquee cloud ls` showed `QEMU-GO-INIT-006 bundle`
+
 ## Usage Examples
 
 Current next steps:
 
-1. Run `docmgr doctor` on ticket `006`.
-2. Upload the refreshed ticket bundle to reMarkable.
-3. Consider a follow-up ticket for richer BBS features such as threads, auth, or a cleaner host automation path.
+1. Consider a follow-up ticket for richer BBS features such as threads, auth, or a cleaner host automation path.
+2. Consider a later transport upgrade from `9p` to `virtiofs` when `virtiofsd` is available.
 
 ## Related
 

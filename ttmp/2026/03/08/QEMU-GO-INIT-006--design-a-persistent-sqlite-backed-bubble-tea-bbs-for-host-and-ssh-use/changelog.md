@@ -14,3 +14,5 @@
 - Replaced the SSH transcript app with the Bubble Tea BBS using Wish middleware.
 - Fixed the guest `9p` mount by bundling and loading the missing `netfs` dependency module.
 - Validated the implementation with `go test ./...`, `make smoke`, and a host-side terminal render of `cmd/bbs`.
+- Added `sqlite` and `tui` to the docmgr vocabulary so the ticket validates cleanly.
+- Uploaded the refreshed ticket bundle to reMarkable at `/ai/2026/03/08/QEMU-GO-INIT-006`.
