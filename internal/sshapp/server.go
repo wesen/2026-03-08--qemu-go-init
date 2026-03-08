@@ -90,10 +90,10 @@ func Start(logger *log.Logger, cfg Config, snapshot SnapshotFunc) (*Service, err
 	}
 
 	middlewares := []wish.Middleware{logging.Middleware()}
+	middlewares = append(middlewares, service.sessionMiddleware())
 	if cfg.RequirePTY {
 		middlewares = append(middlewares, activeterm.Middleware())
 	}
-	middlewares = append(middlewares, service.sessionMiddleware())
 
 	options := []ssh.Option{
 		wish.WithHostKeyPath(cfg.HostKeyPath),

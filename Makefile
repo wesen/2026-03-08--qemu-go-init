@@ -4,6 +4,8 @@ QEMU_BIN ?= qemu-system-x86_64
 KERNEL_IMAGE ?= $(shell find /boot -maxdepth 1 -name 'vmlinuz-*' -readable 2>/dev/null | sort | tail -n 1)
 QEMU_HOST_PORT ?= 8080
 QEMU_GUEST_PORT ?= 8080
+QEMU_SSH_HOST_PORT ?= 10022
+QEMU_SSH_GUEST_PORT ?= 2222
 QEMU_MEMORY ?= 512
 QEMU_APPEND ?= console=ttyS0 rdinit=/init
 QEMU_ENABLE_VIRTIO_RNG ?= 1
@@ -33,11 +35,13 @@ run: $(INITRAMFS)
 		-initrd $(INITRAMFS) \
 		-append "$(QEMU_APPEND)" \
 		$(if $(filter 1 true yes on,$(QEMU_ENABLE_VIRTIO_RNG)),-object "$(QEMU_RNG_OBJECT)" -device "$(QEMU_RNG_DEVICE)") \
-		-nic user,model=virtio-net-pci,hostfwd=tcp::$(QEMU_HOST_PORT)-:$(QEMU_GUEST_PORT)
+		-nic user,model=virtio-net-pci,hostfwd=tcp::$(QEMU_HOST_PORT)-:$(QEMU_GUEST_PORT),hostfwd=tcp::$(QEMU_SSH_HOST_PORT)-:$(QEMU_SSH_GUEST_PORT)
 
 smoke: $(INITRAMFS)
 	HOST_PORT=$(QEMU_HOST_PORT) \
 	KERNEL_IMAGE=$(KERNEL_IMAGE) \
+	SSH_HOST_PORT=$(QEMU_SSH_HOST_PORT) \
+	SSH_GUEST_PORT=$(QEMU_SSH_GUEST_PORT) \
 	QEMU_ENABLE_VIRTIO_RNG=$(QEMU_ENABLE_VIRTIO_RNG) \
 	QEMU_RNG_OBJECT='$(QEMU_RNG_OBJECT)' \
 	QEMU_RNG_DEVICE='$(QEMU_RNG_DEVICE)' \
