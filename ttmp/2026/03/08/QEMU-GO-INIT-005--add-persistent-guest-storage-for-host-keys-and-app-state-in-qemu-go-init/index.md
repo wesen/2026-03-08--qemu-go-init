@@ -1,7 +1,7 @@
 ---
 Title: Add persistent guest storage for host keys and app state in qemu-go-init
 Ticket: QEMU-GO-INIT-005
-Status: active
+Status: complete
 Topics:
     - go
     - qemu
@@ -36,9 +36,9 @@ The goal here is not to replace the initramfs boot model. The goal is to keep th
 
 ## Status
 
-Current status: **active**
+Current status: **complete**
 
-Current status detail: analysis and implementation plan are documented, validated with `docmgr doctor`, and uploaded to reMarkable; no persistence code has been merged yet.
+Current status detail: persistent storage is implemented, validated with a two-boot QEMU smoke test, and the refreshed bundle is uploaded to reMarkable.
 
 ## Topics
 

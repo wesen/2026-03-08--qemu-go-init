@@ -7,7 +7,8 @@
 - [x] Write a detailed persistence architecture and implementation plan
 - [x] Write an intern-oriented implementation guide with commands, pseudocode, and file-level guidance
 - [x] Record the analysis work in the ticket diary
-- [ ] Implement persistent block-device support in the runtime
-- [ ] Add first-boot format / subsequent-boot mount behavior
-- [ ] Persist Wish host keys and application state under a durable guest path
-- [ ] Add QEMU smoke coverage that verifies data survives reboot
+- [x] Add `internal/storage` with config loading, device detection, ext4 mount, and state-directory preparation
+- [x] Add host-side data-image creation and QEMU attachment with create-once / reuse-on-reboot behavior
+- [x] Mount storage during boot, surface storage status in the API/UI, and route Wish state onto the mounted volume
+- [x] Extend QEMU smoke coverage to reboot against the same image and verify the SSH host key persists
+- [x] Refresh the ticket diary, changelog, validation, and published bundle after implementation

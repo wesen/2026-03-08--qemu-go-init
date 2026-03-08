@@ -1,7 +1,7 @@
 ---
 Title: Research and prototype a Wish-based self-hosted SSH app for the Go init runtime
 Ticket: QEMU-GO-INIT-004
-Status: active
+Status: complete
 Topics:
     - go
     - qemu
@@ -34,7 +34,7 @@ This ticket researches how to add a self-hosted SSH application to the existing 
 
 ## Status
 
-Current status: **active**
+Current status: **complete**
 
 Current status detail: Wish is integrated into the guest runtime, exposed in the status UI, validated through QEMU smoke, and the refreshed bundle is uploaded to reMarkable.
 
