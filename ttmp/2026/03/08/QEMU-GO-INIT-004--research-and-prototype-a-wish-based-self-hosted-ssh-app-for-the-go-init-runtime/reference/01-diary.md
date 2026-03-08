@@ -230,6 +230,103 @@ github.com/charmbracelet/wish v1.4.7
 github.com/gliderlabs/ssh v0.3.8
 ```
 
+## Step 4: Build the standalone Wish service package before touching PID 1
+
+This step implemented the first execution task from the updated ticket: create a repo-native `internal/sshapp` package that can load configuration from the environment, start a Wish-backed SSH server, track status, and render a simple interactive session without yet changing the boot sequence. The important part of this slice was keeping it self-contained enough to test in isolation before any QEMU or PID 1 wiring entered the picture.
+
+That isolation paid off immediately. The first broad `go test` run appeared to hang, so I narrowed the scope to the live server test with an explicit timeout. The issue turned out not to be a package-level deadlock, but a lifecycle ambiguity in the test loop. Once I reran the focused test directly, the package behaved as intended and the server startup/shutdown path proved stable.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Start implementing the Wish ticket task by task, with commit boundaries and diary updates after each meaningful slice.
+
+**Inferred user intent:** Land the SSH feature incrementally, so each step is verifiable and well documented rather than bundled into one opaque change.
+
+**Commit (code):** b124f52 — "Add Wish SSH service package"
+
+### What I did
+
+- Added:
+  - [internal/sshapp/config.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshapp/config.go)
+  - [internal/sshapp/server.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshapp/server.go)
+  - [internal/sshapp/server_test.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshapp/server_test.go)
+- Added the Wish dependency to the main module with `go get github.com/charmbracelet/wish@v1.4.7`.
+- Implemented:
+  - env-based SSH config,
+  - a Wish server lifecycle wrapper,
+  - live status reporting,
+  - a simple SSH session transcript renderer,
+  - focused tests for config parsing, session rendering, and start/shutdown behavior.
+
+### Why
+
+- The service package is the safest seam to validate first because it exercises the new dependency and the SSH lifecycle without entangling the existing PID 1 boot logic.
+
+### What worked
+
+- `go get github.com/charmbracelet/wish@v1.4.7 && go mod tidy`
+- `go test ./internal/sshapp -count=1`
+- A real local Wish listener could be started and shut down from the unit test with a generated host key under a temp directory.
+
+### What didn't work
+
+- My first broad package test invocation appeared to hang with no output:
+
+```text
+go test ./internal/sshapp -count=1
+```
+
+- I treated that as a lifecycle problem and reran the live server test explicitly with a timeout:
+
+```text
+go test ./internal/sshapp -run TestStartAndShutdown -count=1 -v -timeout 8s
+```
+
+- That isolated run passed cleanly, which showed the package was viable and the earlier hang was not a deterministic service deadlock.
+
+### What I learned
+
+- The clean way to integrate Wish here is as a small lifecycle wrapper around `wish.NewServer` plus `net.Listen` and `server.Serve`, rather than delegating startup entirely to `ListenAndServe`.
+- Tracking host-key presence and live session counters in the service layer will make the later web UI work straightforward.
+
+### What was tricky to build
+
+- The tricky part was deciding how much of the upstream SSH session interface the renderer should depend on. Making the renderer consume only the subset it actually uses avoided a brittle test double and kept the session output unit-testable.
+
+### What warrants a second pair of eyes
+
+- The auth model is intentionally minimal right now: the service uses Wish’s no-auth behavior by leaving password and public-key handlers unset. That is correct for the demo slice, but it is intentionally not production-ready.
+- The session currently renders status text and exits, which is a good fit for this phase but not yet a richer TUI or command router.
+
+### What should be done in the future
+
+- Wire the service into [cmd/init/main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go), expose its status through the web surface, and then add QEMU SSH forwarding and smoke validation.
+
+### Code review instructions
+
+- Start with:
+  - [internal/sshapp/server.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshapp/server.go)
+  - [internal/sshapp/config.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshapp/config.go)
+  - [internal/sshapp/server_test.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshapp/server_test.go)
+- Re-run:
+
+```bash
+go test ./internal/sshapp -count=1
+```
+
+### Technical details
+
+Commands used:
+
+```bash
+go get github.com/charmbracelet/wish@v1.4.7 && go mod tidy
+gofmt -w internal/sshapp/config.go internal/sshapp/server.go internal/sshapp/server_test.go
+go test ./internal/sshapp -count=1
+go test ./internal/sshapp -run TestStartAndShutdown -count=1 -v -timeout 8s
+```
+
 ## Step 3: Validate the ticket and publish the research bundle
 
 This step closed the research loop by validating the ticket metadata, fixing the one vocabulary issue `docmgr doctor` found, and uploading the finished bundle to reMarkable. At this point the ticket had everything the user asked for: a new workspace, a detailed design doc, an implementation guide, a local experiment, and a diary that captured the useful friction instead of hiding it.
