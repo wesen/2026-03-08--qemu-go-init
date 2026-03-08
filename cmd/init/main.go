@@ -55,6 +55,7 @@ func main() {
 		Network:         networkResult,
 		Entropy:         entropyResult,
 		VirtioRNGModule: moduleResult,
+		SSHStatus:       sshService.Status,
 	})
 	if err != nil {
 		logger.Printf("fatal: build handler: %v", err)

@@ -206,6 +206,13 @@
         <p id="entropy-detail">Waiting for entropy probe...</p>
         <div class="mounts" id="entropy-extra"></div>
       </section>
+
+      <section class="panel" style="margin-top: 22px;">
+        <p class="label">SSH</p>
+        <p class="value" id="ssh-main">...</p>
+        <p id="ssh-detail">Waiting for SSH status...</p>
+        <div class="mounts" id="ssh-extra"></div>
+      </section>
     </main>
 
     <script>
@@ -320,6 +327,43 @@
 
           row.append(left, right);
           entropyExtra.append(row);
+        }
+
+        const ssh = data.ssh || {};
+        document.getElementById("ssh-main").textContent =
+          ssh.enabled
+            ? `${ssh.listenAddr || "pending"} ${ssh.started ? "ready" : "starting"}`
+            : "disabled";
+        document.getElementById("ssh-detail").textContent =
+          ssh.enabled
+            ? `Host key ${ssh.hostKeyPresent ? "present" : "pending"} • auth ${ssh.authMode || "unknown"}`
+            : "Set GO_INIT_ENABLE_SSH=1 to enable the SSH app";
+
+        const sshExtra = document.getElementById("ssh-extra");
+        sshExtra.innerHTML = "";
+        const sshRows = [
+          ["Require PTY", ssh.requirePty ? "yes" : "no"],
+          ["Host key path", ssh.hostKeyPath || "unknown"],
+          ["Active sessions", `${ssh.activeSessions || 0}`],
+          ["Total sessions", `${ssh.totalSessions || 0}`],
+          ["Started", ssh.startedAt || "pending"],
+          ["Uptime", ssh.uptime || "pending"],
+          ["Error", ssh.error || "none"]
+        ];
+        for (const [label, value] of sshRows) {
+          const row = document.createElement("article");
+          row.className = "mount";
+
+          const left = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = label;
+          left.append(title);
+
+          const right = document.createElement("div");
+          right.textContent = value;
+
+          row.append(left, right);
+          sshExtra.append(row);
         }
       }
 

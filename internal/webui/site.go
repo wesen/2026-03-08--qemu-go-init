@@ -13,6 +13,7 @@ import (
 	"github.com/manuel/wesen/qemu-go-init/internal/entropy"
 	"github.com/manuel/wesen/qemu-go-init/internal/kmod"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
+	"github.com/manuel/wesen/qemu-go-init/internal/sshapp"
 )
 
 //go:embed static/*
@@ -24,6 +25,7 @@ type Options struct {
 	Network         networking.Result
 	Entropy         entropy.Result
 	VirtioRNGModule kmod.Result
+	SSHStatus       func() sshapp.Status
 }
 
 type statusResponse struct {
@@ -39,6 +41,7 @@ type statusResponse struct {
 	Network         networking.Result  `json:"network"`
 	Entropy         entropy.Result     `json:"entropy"`
 	VirtioRNGModule kmod.Result        `json:"virtioRngModule"`
+	SSH             sshapp.Status      `json:"ssh"`
 }
 
 func NewHandler(options Options) (http.Handler, error) {
@@ -51,6 +54,11 @@ func NewHandler(options Options) (http.Handler, error) {
 	startedAt := time.Now().UTC()
 
 	status := func() statusResponse {
+		sshStatus := sshapp.Status{}
+		if options.SSHStatus != nil {
+			sshStatus = options.SSHStatus()
+		}
+
 		return statusResponse{
 			PID:             os.Getpid(),
 			Hostname:        hostname,
@@ -64,6 +72,7 @@ func NewHandler(options Options) (http.Handler, error) {
 			Network:         options.Network,
 			Entropy:         options.Entropy,
 			VirtioRNGModule: options.VirtioRNGModule,
+			SSH:             sshStatus,
 		}
 	}
 
