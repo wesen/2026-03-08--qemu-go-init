@@ -50,6 +50,13 @@ Current gaps:
 
 Without those pieces, the demo is still vulnerable to hidden early-boot randomness assumptions, and the operator has no built-in visibility into whether the guest sees a usable RNG path.
 
+After the first implementation slices in this ticket, there is now a narrower remaining gap:
+
+- QEMU launches with `virtio-rng`, and the guest reports entropy diagnostics,
+- but the current Ubuntu host kernel used for the guest boot has `CONFIG_HW_RANDOM_VIRTIO=m`,
+- the initramfs does not ship kernel modules,
+- so the guest cannot currently activate the `virtio_rng` driver even though the device is present in QEMU.
+
 ## Proposed Solution
 
 Implement entropy support in three coordinated layers.
@@ -173,12 +180,20 @@ Rejected because:
 - Inspect `/api/status`.
 - Record results in the diary and changelog.
 
+### Phase 6: Kernel-side follow-up
+
+Choose one of:
+
+- boot a kernel with `CONFIG_HW_RANDOM_VIRTIO=y`,
+- or extend the initramfs/runtime to ship and load the `virtio_rng` module for the booted kernel.
+
 ## Open Questions
 
 Open questions are intentionally limited:
 
 - Should `virtio-rng` be enabled by default in every QEMU path or only smoke/debug by default?
 - Should low entropy ever affect health reporting, or remain informational in this ticket?
+- Should the repo solve kernel-side `virtio_rng` activation here or in a follow-up ticket once the module-loading/custom-kernel path is chosen?
 - Should a follow-up ticket add seed persistence once the project has a writable guest storage model?
 
 ## References
