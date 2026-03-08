@@ -9,6 +9,7 @@ import (
 	"github.com/manuel/wesen/qemu-go-init/internal/entropy"
 	"github.com/manuel/wesen/qemu-go-init/internal/kmod"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
+	"github.com/manuel/wesen/qemu-go-init/internal/sshapp"
 	"github.com/manuel/wesen/qemu-go-init/internal/webui"
 )
 
@@ -28,6 +29,25 @@ func main() {
 		boot.Halt(logger)
 	}
 	addr := boot.HTTPAddress()
+	sshService, err := sshapp.Start(logger, sshapp.LoadConfigFromEnv(), func() sshapp.Snapshot {
+		return sshapp.Snapshot{
+			Hostname:          hostname(),
+			PID:               os.Getpid(),
+			HTTPAddress:       addr,
+			NetworkMethod:     networkResult.Method,
+			NetworkInterface:  networkResult.InterfaceName,
+			NetworkAddress:    networkResult.CIDR,
+			NetworkConfigured: networkResult.Configured,
+			EntropyAvail:      entropyResult.EntropyAvail,
+			EntropyKnown:      entropyResult.EntropyAvailKnown,
+			VirtioRNGVisible:  entropyResult.VirtioRNGVisible,
+		}
+	})
+	if err != nil {
+		logger.Printf("fatal: start ssh app: %v", err)
+		boot.Halt(logger)
+	}
+	sshStatus := sshService.Status()
 
 	handler, err := webui.NewHandler(webui.Options{
 		ListenAddr:      addr,
@@ -41,9 +61,17 @@ func main() {
 		boot.Halt(logger)
 	}
 
-	logger.Printf("go init ready on %s", addr)
+	logger.Printf("go init ready http=%s ssh=%s", addr, sshStatus.ListenAddr)
 	if err := boot.ServeHTTP(addr, handler, logger); err != nil {
 		logger.Printf("fatal: serve http: %v", err)
 		boot.Halt(logger)
 	}
+}
+
+func hostname() string {
+	value, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return value
 }
