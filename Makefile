@@ -1,6 +1,7 @@
 GO ?= go
 BUILD_DIR ?= build
 QEMU_BIN ?= qemu-system-x86_64
+comma := ,
 KERNEL_IMAGE ?= $(shell find /boot -maxdepth 1 -name 'vmlinuz-*' -readable 2>/dev/null | sort | tail -n 1)
 QEMU_HOST_PORT ?= 8080
 QEMU_GUEST_PORT ?= 8080
@@ -29,6 +30,9 @@ INITRAMFS_9PNET_VIRTIO_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/net/9
 
 INIT_BIN := $(BUILD_DIR)/init
 INITRAMFS := $(BUILD_DIR)/initramfs.cpio.gz
+QEMU_RUN_STORAGE_ARGS := -drive file=$(QEMU_DATA_IMAGE),if=virtio,format=raw
+QEMU_RUN_SHARED_STATE_ARGS := -virtfs local$(comma)path=$(QEMU_SHARED_STATE_HOST_PATH)$(comma)mount_tag=$(QEMU_SHARED_STATE_MOUNT_TAG)$(comma)security_model=none$(comma)id=$(QEMU_SHARED_STATE_FSDEV_ID) -device virtio-9p-pci$(comma)fsdev=$(QEMU_SHARED_STATE_FSDEV_ID)$(comma)mount_tag=$(QEMU_SHARED_STATE_MOUNT_TAG)
+QEMU_RUN_RNG_ARGS := -object "$(QEMU_RNG_OBJECT)" -device "$(QEMU_RNG_DEVICE)"
 
 .PHONY: build initramfs test run smoke clean data-image shared-state-dir
 
@@ -47,9 +51,9 @@ run: $(INITRAMFS) $(if $(filter 1 true yes on,$(QEMU_ENABLE_STORAGE)),$(QEMU_DAT
 		-kernel $(KERNEL_IMAGE) \
 		-initrd $(INITRAMFS) \
 		-append "$(QEMU_APPEND)" \
-		$(if $(filter 1 true yes on,$(QEMU_ENABLE_STORAGE)),-drive file=$(QEMU_DATA_IMAGE),if=virtio,format=raw) \
-		$(if $(filter 1 true yes on,$(QEMU_ENABLE_SHARED_STATE)),-virtfs "local,path=$(QEMU_SHARED_STATE_HOST_PATH),mount_tag=$(QEMU_SHARED_STATE_MOUNT_TAG),security_model=none,id=$(QEMU_SHARED_STATE_FSDEV_ID)" -device "virtio-9p-pci,fsdev=$(QEMU_SHARED_STATE_FSDEV_ID),mount_tag=$(QEMU_SHARED_STATE_MOUNT_TAG)") \
-		$(if $(filter 1 true yes on,$(QEMU_ENABLE_VIRTIO_RNG)),-object "$(QEMU_RNG_OBJECT)" -device "$(QEMU_RNG_DEVICE)") \
+		$(if $(filter 1 true yes on,$(QEMU_ENABLE_STORAGE)),$(QEMU_RUN_STORAGE_ARGS)) \
+		$(if $(filter 1 true yes on,$(QEMU_ENABLE_SHARED_STATE)),$(QEMU_RUN_SHARED_STATE_ARGS)) \
+		$(if $(filter 1 true yes on,$(QEMU_ENABLE_VIRTIO_RNG)),$(QEMU_RUN_RNG_ARGS)) \
 		-nic user,model=virtio-net-pci,hostfwd=tcp::$(QEMU_HOST_PORT)-:$(QEMU_GUEST_PORT),hostfwd=tcp::$(QEMU_SSH_HOST_PORT)-:$(QEMU_SSH_GUEST_PORT)
 
 smoke: $(INITRAMFS) $(if $(filter 1 true yes on,$(QEMU_ENABLE_STORAGE)),$(QEMU_DATA_IMAGE)) $(if $(filter 1 true yes on,$(QEMU_ENABLE_SHARED_STATE)),shared-state-dir)
