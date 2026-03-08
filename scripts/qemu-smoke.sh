@@ -155,7 +155,7 @@ fetch_status() {
 run_ssh_session() {
   set +e
   local output
-  output=$(timeout 10s ssh -tt \
+  output=$(printf 'q' | timeout 10s ssh -tt \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o PreferredAuthentications=none \
@@ -164,7 +164,7 @@ run_ssh_session() {
     -o ConnectTimeout=5 \
     -o LogLevel=ERROR \
     -p "${SSH_HOST_PORT}" \
-    127.0.0.1 2>&1 </dev/null)
+    127.0.0.1 2>&1)
   local exit_code=$?
   set -e
 
@@ -204,7 +204,7 @@ assert_status() {
   esac
   case "${QEMU_REQUIRE_SHARED_STATE,,}" in
     1|true|yes|on)
-      printf '%s\n' "${json}" | rg -U -P -q '"sharedState":\s*\{[\s\S]*?"mounted":\s*true'
+      printf '%s\n' "${json}" | rg -U -P -q '"sharedState":\s*\{[\s\S]*?"mounted":\s*true[\s\S]*?"step":\s*"ready"'
       ;;
   esac
 }
@@ -222,8 +222,9 @@ probe_boot() {
   local ssh_output
   ssh_output=$(run_ssh_session)
   printf '\n%s\n' "${ssh_output}" >&2
-  printf '%s\n' "${ssh_output}" | rg -q 'qemu-go-init / wish'
-  printf '%s\n' "${ssh_output}" | rg -q 'Host key'
+  printf '%s\n' "${ssh_output}" | rg -q 'qemu-go-init bbs'
+  printf '%s\n' "${ssh_output}" | rg -q 'Shared-state Bubble Tea board|SSH BBS'
+  printf '%s\n' "${ssh_output}" | rg -q '/var/lib/go-init/shared/bbs'
 
   local host_key
   host_key=$(scan_host_key)

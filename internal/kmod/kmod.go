@@ -10,6 +10,7 @@ import (
 
 const VirtioRNGModulePath = "/lib/modules/virtio_rng.ko"
 const (
+	NetFSModulePath          = "/lib/modules/netfs.ko"
 	NinePModulePath          = "/lib/modules/9p.ko"
 	NinePNetModulePath       = "/lib/modules/9pnet.ko"
 	NinePNetVirtioModulePath = "/lib/modules/9pnet_virtio.ko"
@@ -36,8 +37,9 @@ func LoadVirtioRNG(logger *log.Logger) Result {
 func LoadNinePStack(logger *log.Logger) []Result {
 	return []Result{
 		ensureModule(NinePNetModulePath, logger, os.Stat, loadModuleFile),
-		ensureModule(NinePNetVirtioModulePath, logger, os.Stat, loadModuleFile),
+		ensureModule(NetFSModulePath, logger, os.Stat, loadModuleFile),
 		ensureModule(NinePModulePath, logger, os.Stat, loadModuleFile),
+		ensureModule(NinePNetVirtioModulePath, logger, os.Stat, loadModuleFile),
 	}
 }
 

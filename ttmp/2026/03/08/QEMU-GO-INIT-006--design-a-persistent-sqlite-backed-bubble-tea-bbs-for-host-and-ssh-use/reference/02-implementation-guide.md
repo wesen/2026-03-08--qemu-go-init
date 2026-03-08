@@ -134,20 +134,32 @@ find /lib/modules/$(uname -r) -type f | rg '/(9p|9pnet|9pnet_virtio)\\.ko(\\.zst
 
 ### Host-native BBS
 
-Target command after implementation:
+Current command:
 
 ```bash
 go run ./cmd/bbs
 ```
 
+To point at a specific state root:
+
+```bash
+go run ./cmd/bbs -state-root build/shared-state/bbs
+```
+
 ### Guest BBS
 
-Target command after implementation:
+Current command:
 
 ```bash
 make smoke KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18080 QEMU_SSH_HOST_PORT=10022
 ssh -p 10022 127.0.0.1
 ```
+
+Expected SSH behavior:
+
+- Wish starts the Bubble Tea BBS instead of the old static transcript
+- the title line includes `qemu-go-init bbs`
+- the state root line should show `/var/lib/go-init/shared/bbs`
 
 ## Related
 

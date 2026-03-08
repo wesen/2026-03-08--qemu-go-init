@@ -5,12 +5,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/manuel/wesen/qemu-go-init/internal/bbsstore"
 	"github.com/manuel/wesen/qemu-go-init/internal/boot"
 	"github.com/manuel/wesen/qemu-go-init/internal/entropy"
 	"github.com/manuel/wesen/qemu-go-init/internal/kmod"
 	"github.com/manuel/wesen/qemu-go-init/internal/networking"
 	"github.com/manuel/wesen/qemu-go-init/internal/sharedstate"
 	"github.com/manuel/wesen/qemu-go-init/internal/sshapp"
+	"github.com/manuel/wesen/qemu-go-init/internal/sshbbs"
 	"github.com/manuel/wesen/qemu-go-init/internal/storage"
 	"github.com/manuel/wesen/qemu-go-init/internal/webui"
 )
@@ -39,6 +41,13 @@ func main() {
 		logger.Printf("fatal: configure networking: %v", err)
 		boot.Halt(logger)
 	}
+	bbsRoot := sharedstate.BBSRoot(sharedStateResult, storageResult.MountPoint+"/app")
+	store, err := bbsstore.Open(bbsRoot)
+	if err != nil {
+		logger.Printf("fatal: open bbs store: %v", err)
+		boot.Halt(logger)
+	}
+	defer store.Close()
 	addr := boot.HTTPAddress()
 	sshService, err := sshapp.Start(logger, sshapp.LoadConfigFromEnv(), func() sshapp.Snapshot {
 		return sshapp.Snapshot{
@@ -53,7 +62,7 @@ func main() {
 			EntropyKnown:      entropyResult.EntropyAvailKnown,
 			VirtioRNGVisible:  entropyResult.VirtioRNGVisible,
 		}
-	})
+	}, sshbbs.Middleware(store))
 	if err != nil {
 		logger.Printf("fatal: start ssh app: %v", err)
 		boot.Halt(logger)

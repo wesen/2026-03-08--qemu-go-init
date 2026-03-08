@@ -9,3 +9,8 @@
 - Verified that `virtiofs` is not immediately usable in this environment because `virtiofsd` is absent, while the current kernel does provide `9p` support as loadable modules.
 - Added a generic initramfs module-packaging path so multiple kernel modules can be embedded without special-casing each one.
 - Added guest shared-state mount plumbing and QEMU `-virtfs` wiring for a `9p`-backed host-shared directory.
+- Added a SQLite-backed store with schema initialization and a seeded welcome post.
+- Added a reusable Bubble Tea BBS model plus a host `cmd/bbs` entrypoint.
+- Replaced the SSH transcript app with the Bubble Tea BBS using Wish middleware.
+- Fixed the guest `9p` mount by bundling and loading the missing `netfs` dependency module.
+- Validated the implementation with `go test ./...`, `make smoke`, and a host-side terminal render of `cmd/bbs`.

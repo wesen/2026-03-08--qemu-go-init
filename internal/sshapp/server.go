@@ -77,7 +77,7 @@ type Service struct {
 	errText   string
 }
 
-func Start(logger *log.Logger, cfg Config, snapshot SnapshotFunc) (*Service, error) {
+func Start(logger *log.Logger, cfg Config, snapshot SnapshotFunc, appMiddlewares ...wish.Middleware) (*Service, error) {
 	service := &Service{
 		cfg:      cfg,
 		logger:   logger,
@@ -92,7 +92,11 @@ func Start(logger *log.Logger, cfg Config, snapshot SnapshotFunc) (*Service, err
 	}
 
 	middlewares := []wish.Middleware{logging.Middleware()}
-	middlewares = append(middlewares, service.sessionMiddleware())
+	if len(appMiddlewares) > 0 {
+		middlewares = append(middlewares, appMiddlewares...)
+	} else {
+		middlewares = append(middlewares, service.sessionMiddleware())
+	}
 	if cfg.RequirePTY {
 		middlewares = append(middlewares, activeterm.Middleware())
 	}

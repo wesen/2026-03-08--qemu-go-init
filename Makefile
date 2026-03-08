@@ -22,6 +22,7 @@ QEMU_RNG_DEVICE ?= virtio-rng-pci,rng=rng0
 INITRAMFS_ENABLE_VIRTIO_RNG_MODULE ?= 1
 INITRAMFS_VIRTIO_RNG_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/drivers/char/hw_random/virtio-rng.ko.zst
 INITRAMFS_ENABLE_9P_MODULES ?= 1
+INITRAMFS_NETFS_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/fs/netfs/netfs.ko.zst
 INITRAMFS_9P_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/fs/9p/9p.ko.zst
 INITRAMFS_9PNET_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/net/9p/9pnet.ko.zst
 INITRAMFS_9PNET_VIRTIO_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/net/9p/9pnet_virtio.ko.zst
@@ -79,7 +80,7 @@ $(INIT_BIN): $(shell find cmd internal -type f -name '*.go')
 $(INITRAMFS): $(INIT_BIN)
 	$(GO) run ./cmd/mkinitramfs -init-bin $(INIT_BIN) -output $(INITRAMFS) \
 		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_VIRTIO_RNG_MODULE)),-module-map "/lib/modules/virtio_rng.ko=$(INITRAMFS_VIRTIO_RNG_MODULE_SRC)") \
-		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_9P_MODULES)),-module-map "/lib/modules/9p.ko=$(INITRAMFS_9P_MODULE_SRC)" -module-map "/lib/modules/9pnet.ko=$(INITRAMFS_9PNET_MODULE_SRC)" -module-map "/lib/modules/9pnet_virtio.ko=$(INITRAMFS_9PNET_VIRTIO_MODULE_SRC)")
+		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_9P_MODULES)),-module-map "/lib/modules/netfs.ko=$(INITRAMFS_NETFS_MODULE_SRC)" -module-map "/lib/modules/9p.ko=$(INITRAMFS_9P_MODULE_SRC)" -module-map "/lib/modules/9pnet.ko=$(INITRAMFS_9PNET_MODULE_SRC)" -module-map "/lib/modules/9pnet_virtio.ko=$(INITRAMFS_9PNET_VIRTIO_MODULE_SRC)")
 
 $(QEMU_DATA_IMAGE):
 	mkdir -p $(BUILD_DIR)

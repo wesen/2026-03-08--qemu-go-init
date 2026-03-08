@@ -129,14 +129,81 @@ go test ./...
   - test suite passed
   - no runtime smoke yet because the BBS application layer is still pending
 
+#### 2026-03-08 19:35 America/New_York
+
+- Implemented the BBS application layer:
+  - [internal/bbsstore/store.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/bbsstore/store.go)
+  - [internal/bbsapp/model.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/bbsapp/model.go)
+  - [internal/sshbbs/middleware.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshbbs/middleware.go)
+  - [cmd/bbs/main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/bbs/main.go)
+- Updated:
+  - [cmd/init/main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go)
+  - [internal/sshapp/server.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshapp/server.go)
+  - [scripts/qemu-smoke.sh](/home/manuel/code/wesen/2026-03-08--qemu-go-init/scripts/qemu-smoke.sh)
+- Added dependencies with `go mod tidy`:
+  - `github.com/charmbracelet/bubbles`
+  - `modernc.org/sqlite`
+- Validation:
+
+```bash
+gofmt -w cmd/bbs/main.go cmd/init/main.go internal/bbsapp/model.go internal/bbsstore/store.go internal/bbsstore/store_test.go internal/sshapp/server.go internal/sshbbs/middleware.go
+go mod tidy
+go test ./...
+```
+
+- Result:
+  - unit and package compile tests passed
+  - the first smoke attempt booted the BBS successfully over SSH, but the shared mount failed
+
+#### 2026-03-08 19:45 America/New_York
+
+- Investigated the first `9p` mount failure.
+- Guest symptom:
+  - shared-state mount returned `no such device`
+  - BBS fell back to `/var/lib/go-init/app/bbs`
+- API status showed:
+  - `9pnet` loaded
+  - `9pnet_virtio` loaded
+  - `9p` failed with `no such file or directory`
+- Ran host-side inspection with `modinfo` on:
+  - `/lib/modules/$(uname -r)/kernel/fs/9p/9p.ko.zst`
+  - `/lib/modules/$(uname -r)/kernel/net/9p/9pnet.ko.zst`
+  - `/lib/modules/$(uname -r)/kernel/net/9p/9pnet_virtio.ko.zst`
+- Important finding:
+  - `9p.ko` depends on `netfs`
+- Fix:
+  - added `netfs` module packaging in [Makefile](/home/manuel/code/wesen/2026-03-08--qemu-go-init/Makefile)
+  - added `netfs` module loading in [internal/kmod/kmod.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/kmod/kmod.go)
+
+#### 2026-03-08 19:50 America/New_York
+
+- Re-ran full validation after the `netfs` fix.
+- Commands:
+
+```bash
+go test ./...
+timeout 180s env KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18084 QEMU_SSH_HOST_PORT=10026 make smoke
+command -v script >/dev/null && timeout 20s script -qec 'printf q | go run ./cmd/bbs -state-root build/shared-state/bbs' /dev/null
+```
+
+- Results:
+  - `go test ./...` passed
+  - `make smoke` passed with:
+    - `/var/lib/go-init/shared` mounted successfully over `9p`
+    - BBS state root shown as `/var/lib/go-init/shared/bbs`
+    - two-boot SSH host-key persistence still passing
+  - host-side `cmd/bbs` rendered the same seeded board from `build/shared-state/bbs`
+- One minor automation note:
+  - the host `script`-based validation rendered correctly but timed out rather than exiting cleanly after piping `q`
+  - the important part is that the board rendered and loaded the shared-state data path on the host
+
 ## Usage Examples
 
 Current next steps:
 
-1. Add the reusable SQLite store and Bubble Tea app packages.
-2. Add the host `cmd/bbs` entrypoint.
-3. Replace the SSH transcript with the new BBS.
-4. Validate host and guest flows together.
+1. Run `docmgr doctor` on ticket `006`.
+2. Upload the refreshed ticket bundle to reMarkable.
+3. Consider a follow-up ticket for richer BBS features such as threads, auth, or a cleaner host automation path.
 
 ## Related
 
