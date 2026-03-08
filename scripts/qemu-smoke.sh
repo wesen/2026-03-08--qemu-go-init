@@ -14,6 +14,8 @@ QEMU_APPEND=${QEMU_APPEND:-console=ttyS0 rdinit=/init}
 QEMU_LOG=${QEMU_LOG:-"${BUILD_DIR}/qemu-smoke.log"}
 QEMU_NET_MODEL=${QEMU_NET_MODEL:-virtio-net-pci}
 QEMU_PCAP=${QEMU_PCAP:-}
+QEMU_ENABLE_STORAGE=${QEMU_ENABLE_STORAGE:-1}
+QEMU_DATA_IMAGE=${QEMU_DATA_IMAGE:-"${BUILD_DIR}/data.img"}
 QEMU_ENABLE_VIRTIO_RNG=${QEMU_ENABLE_VIRTIO_RNG:-1}
 QEMU_RNG_OBJECT=${QEMU_RNG_OBJECT:-rng-random,id=rng0,filename=/dev/urandom}
 QEMU_RNG_DEVICE=${QEMU_RNG_DEVICE:-virtio-rng-pci,rng=rng0}
@@ -34,6 +36,15 @@ if [[ ! -f "${BUILD_DIR}/initramfs.cpio.gz" ]]; then
   exit 1
 fi
 
+case "${QEMU_ENABLE_STORAGE,,}" in
+  1|true|yes|on)
+    if [[ ! -f "${QEMU_DATA_IMAGE}" ]]; then
+      echo "missing QEMU_DATA_IMAGE=${QEMU_DATA_IMAGE}; run 'make data-image' first" >&2
+      exit 1
+    fi
+    ;;
+esac
+
 mkdir -p "${BUILD_DIR}"
 rm -f "${QEMU_LOG}"
 if [[ -n "${QEMU_PCAP}" ]]; then
@@ -48,6 +59,18 @@ QEMU_ARGS=(
   -initrd "${BUILD_DIR}/initramfs.cpio.gz"
   -append "${QEMU_APPEND}"
 )
+
+case "${QEMU_ENABLE_STORAGE,,}" in
+  1|true|yes|on)
+    QEMU_ARGS+=(
+      -drive "file=${QEMU_DATA_IMAGE},if=virtio,format=raw"
+    )
+    QEMU_STORAGE=enabled
+    ;;
+  *)
+    QEMU_STORAGE=disabled
+    ;;
+esac
 
 if [[ -n "${QEMU_PCAP}" ]]; then
   QEMU_ARGS+=(
@@ -74,7 +97,7 @@ case "${QEMU_ENABLE_VIRTIO_RNG,,}" in
     ;;
 esac
 
-echo "qemu-smoke: kernel=${KERNEL_IMAGE} http_host_port=${HOST_PORT} http_guest_port=${GUEST_PORT} ssh_host_port=${SSH_HOST_PORT} ssh_guest_port=${SSH_GUEST_PORT} model=${QEMU_NET_MODEL} pcap=${QEMU_PCAP:-disabled} virtio_rng=${QEMU_VIRTIO_RNG}" >"${QEMU_LOG}"
+echo "qemu-smoke: kernel=${KERNEL_IMAGE} http_host_port=${HOST_PORT} http_guest_port=${GUEST_PORT} ssh_host_port=${SSH_HOST_PORT} ssh_guest_port=${SSH_GUEST_PORT} storage=${QEMU_STORAGE} data_image=${QEMU_DATA_IMAGE} model=${QEMU_NET_MODEL} pcap=${QEMU_PCAP:-disabled} virtio_rng=${QEMU_VIRTIO_RNG}" >"${QEMU_LOG}"
 "${QEMU_BIN}" "${QEMU_ARGS[@]}" >>"${QEMU_LOG}" 2>&1 &
 QEMU_PID=$!
 
