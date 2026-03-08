@@ -541,3 +541,89 @@ Key proof points from `build/qemu-smoke.log`:
 2026/03/08 20:20:12.345060 networking: configured eth0 with 10.0.2.15/24 gateway=10.0.2.2 dns=10.0.2.3
 2026/03/08 20:20:12.463390 go init ready on :8080
 ```
+
+## Step 6: Write the entropy-focused postmortem and capture the production lessons
+
+With the DHCP bug resolved, the next job was to turn the debugging trail into a durable engineering document. The postmortem needed to explain not just what failed, but why the failure mode matters for any project that depends on randomness in early boot.
+
+I wrote a dedicated postmortem that connects the incident to concrete project requirements: explicit entropy sources, guest-kernel support, persistent seed strategy, and a policy that separates security-sensitive randomness from merely unique protocol identifiers.
+
+### Prompt Context
+
+**User prompt (verbatim):**
+
+> what would we need to do to handle actual entrpy generation? that's important for my project.
+>
+> Also create a detailed postmortem document.
+
+**Assistant interpretation:** Explain the real entropy requirements for a production-oriented early-boot system and add a thorough postmortem to the ticket.
+
+**Inferred user intent:** Use the resolved DHCP incident as a forcing function to define a stronger boot-time randomness strategy for the broader project.
+
+**Commit (code):** pending
+
+### What I did
+
+- Created a new reference doc:
+  - [03-postmortem-early-boot-dhcp-entropy-stall-and-recovery.md](/home/manuel/code/wesen/2026-03-08--qemu-go-init/ttmp/2026/03/08/QEMU-GO-INIT-002--userspace-dhcp-in-the-go-init-binary-for-qemu-guest-networking/reference/03-postmortem-early-boot-dhcp-entropy-stall-and-recovery.md)
+- Documented:
+  - the incident timeline,
+  - root cause,
+  - misleading intermediate hypotheses,
+  - evidence from logs and packet capture,
+  - the final fix,
+  - concrete entropy recommendations for a production project.
+- Framed the entropy guidance at four layers:
+  - QEMU / virtual hardware,
+  - guest kernel support,
+  - persistent seed handoff,
+  - userspace blocking policy.
+
+### Why
+
+- The DHCP failure was not just a networking bug. It was an early-boot randomness dependency bug.
+- Without a postmortem, a future engineer could revert to the convenience helper path or introduce the same failure class elsewhere, for example in token generation, TLS bootstrap, or boot-time credentials.
+
+### What worked
+
+- The postmortem now explains the actual lesson: hidden entropy dependencies are infrastructure-level risks in minimal boot environments.
+- The document is concrete enough to guide future implementation work instead of just recording history.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The right long-term answer is not “never use randomness in early boot.” It is “decide explicitly which randomness must be cryptographically strong, and provide the system support to make that safe.”
+- A virtualized project without an explicit entropy source is carrying an invisible systems risk, even if the first visible symptom appears in something small like DHCP.
+
+### What was tricky to build
+
+- The main challenge was keeping the postmortem balanced: it needed to stay anchored to the resolved DHCP incident while still giving useful guidance for broader project design decisions around entropy.
+
+### What warrants a second pair of eyes
+
+- The entropy recommendations are operationally important. If the project will handle secrets in early boot, they should be reviewed against the exact kernel/QEMU environment you plan to ship.
+
+### What should be done in the future
+
+- Add `virtio-rng` to the QEMU recipe if the environment is expected to generate real secrets in early boot.
+- Audit the rest of the early-boot codebase for hidden calls to blocking randomness.
+- Decide whether the final runtime should expose entropy-health information in diagnostics or status output.
+
+### Code review instructions
+
+- Read the postmortem first:
+  - [03-postmortem-early-boot-dhcp-entropy-stall-and-recovery.md](/home/manuel/code/wesen/2026-03-08--qemu-go-init/ttmp/2026/03/08/QEMU-GO-INIT-002--userspace-dhcp-in-the-go-init-binary-for-qemu-guest-networking/reference/03-postmortem-early-boot-dhcp-entropy-stall-and-recovery.md)
+- Then compare the guidance to the working code in:
+  - [internal/networking/network.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/networking/network.go)
+
+### Technical details
+
+Recommended QEMU direction for real entropy:
+
+```text
+-object rng-random,id=rng0,filename=/dev/urandom
+-device virtio-rng-pci,rng=rng0
+```
