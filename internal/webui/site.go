@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/manuel/wesen/qemu-go-init/internal/boot"
+	"github.com/manuel/wesen/qemu-go-init/internal/networking"
 )
 
 //go:embed static/*
@@ -18,6 +19,7 @@ var staticFiles embed.FS
 type Options struct {
 	ListenAddr string
 	Mounts     []boot.MountResult
+	Network    networking.Result
 }
 
 type statusResponse struct {
@@ -30,6 +32,7 @@ type statusResponse struct {
 	StartedAt  string             `json:"startedAt"`
 	Uptime     string             `json:"uptime"`
 	Mounts     []boot.MountResult `json:"mounts"`
+	Network    networking.Result  `json:"network"`
 }
 
 func NewHandler(options Options) (http.Handler, error) {
@@ -52,6 +55,7 @@ func NewHandler(options Options) (http.Handler, error) {
 			StartedAt:  startedAt.Format(time.RFC3339),
 			Uptime:     time.Since(startedAt).Round(time.Second).String(),
 			Mounts:     options.Mounts,
+			Network:    options.Network,
 		}
 	}
 

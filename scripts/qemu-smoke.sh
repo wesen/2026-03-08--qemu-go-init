@@ -8,8 +8,10 @@ KERNEL_IMAGE=${KERNEL_IMAGE:-$(find /boot -maxdepth 1 -name 'vmlinuz-*' -readabl
 HOST_PORT=${HOST_PORT:-18080}
 GUEST_PORT=${GUEST_PORT:-8080}
 QEMU_MEMORY=${QEMU_MEMORY:-512}
-QEMU_APPEND=${QEMU_APPEND:-console=ttyS0 rdinit=/init ip=dhcp}
+QEMU_APPEND=${QEMU_APPEND:-console=ttyS0 rdinit=/init}
 QEMU_LOG=${QEMU_LOG:-"${BUILD_DIR}/qemu-smoke.log"}
+QEMU_NET_MODEL=${QEMU_NET_MODEL:-virtio-net-pci}
+QEMU_PCAP=${QEMU_PCAP:-}
 
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "KERNEL_IMAGE is not set and no readable /boot/vmlinuz-* image was found. Set KERNEL_IMAGE to a readable bzImage/vmlinuz path." >&2
@@ -28,16 +30,33 @@ fi
 
 mkdir -p "${BUILD_DIR}"
 rm -f "${QEMU_LOG}"
+if [[ -n "${QEMU_PCAP}" ]]; then
+  rm -f "${QEMU_PCAP}"
+fi
 
-"${QEMU_BIN}" \
-  -m "${QEMU_MEMORY}" \
-  -nographic \
-  -no-reboot \
-  -kernel "${KERNEL_IMAGE}" \
-  -initrd "${BUILD_DIR}/initramfs.cpio.gz" \
-  -append "${QEMU_APPEND}" \
-  -nic "user,model=virtio-net-pci,hostfwd=tcp::${HOST_PORT}-:${GUEST_PORT}" \
-  >"${QEMU_LOG}" 2>&1 &
+QEMU_ARGS=(
+  -m "${QEMU_MEMORY}"
+  -nographic
+  -no-reboot
+  -kernel "${KERNEL_IMAGE}"
+  -initrd "${BUILD_DIR}/initramfs.cpio.gz"
+  -append "${QEMU_APPEND}"
+)
+
+if [[ -n "${QEMU_PCAP}" ]]; then
+  QEMU_ARGS+=(
+    -netdev "user,id=n1,hostfwd=tcp::${HOST_PORT}-:${GUEST_PORT}"
+    -device "${QEMU_NET_MODEL},netdev=n1"
+    -object "filter-dump,id=f1,netdev=n1,file=${QEMU_PCAP}"
+  )
+else
+  QEMU_ARGS+=(
+    -nic "user,model=${QEMU_NET_MODEL},hostfwd=tcp::${HOST_PORT}-:${GUEST_PORT}"
+  )
+fi
+
+echo "qemu-smoke: kernel=${KERNEL_IMAGE} host_port=${HOST_PORT} guest_port=${GUEST_PORT} model=${QEMU_NET_MODEL} pcap=${QEMU_PCAP:-disabled}" >"${QEMU_LOG}"
+"${QEMU_BIN}" "${QEMU_ARGS[@]}" >>"${QEMU_LOG}" 2>&1 &
 QEMU_PID=$!
 
 cleanup() {
@@ -49,11 +68,11 @@ cleanup() {
 trap cleanup EXIT
 
 for _ in $(seq 1 80); do
-  if curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null 2>&1; then
+  if curl -fsS --max-time 1 "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null 2>&1; then
     break
   fi
   sleep 0.5
 done
 
-curl -fsS "http://127.0.0.1:${HOST_PORT}/" >/dev/null
-curl -fsS "http://127.0.0.1:${HOST_PORT}/api/status"
+curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/" >/dev/null
+curl -fsS --max-time 5 "http://127.0.0.1:${HOST_PORT}/api/status"

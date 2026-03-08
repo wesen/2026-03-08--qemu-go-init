@@ -192,6 +192,13 @@
         <p id="uptime">Waiting for status...</p>
         <div class="mounts" id="mounts"></div>
       </section>
+
+      <section class="panel" style="margin-top: 22px;">
+        <p class="label">Network</p>
+        <p class="value" id="network-main">...</p>
+        <p id="network-detail">Waiting for DHCP...</p>
+        <div class="mounts" id="network-extra"></div>
+      </section>
     </main>
 
     <script>
@@ -225,6 +232,46 @@
 
           row.append(left, right);
           mounts.append(row);
+        }
+
+        const network = data.network || {};
+        const dns = Array.isArray(network.dnsServers) && network.dnsServers.length > 0
+          ? network.dnsServers.join(", ")
+          : "none";
+        document.getElementById("network-main").textContent =
+          network.configured
+            ? `${network.interfaceName} ${network.cidr || network.address || ""}`.trim()
+            : `${network.interfaceName || "no-interface"} ${network.step || "pending"}`.trim();
+        document.getElementById("network-detail").textContent =
+          network.configured
+            ? `Gateway ${network.gateway || "none"} • DNS ${dns}`
+            : `Status: ${network.error || network.step || "pending"}`;
+
+        const networkExtra = document.getElementById("network-extra");
+        networkExtra.innerHTML = "";
+        const rows = [
+          ["Method", network.method || "unknown"],
+          ["Hardware address", network.hardwareAddr || "unknown"],
+          ["Domain", network.domainName || "none"],
+          ["Lease", network.leaseSeconds ? `${network.leaseSeconds}s` : "unknown"],
+          ["Renew", network.renewalSeconds ? `${network.renewalSeconds}s` : "unknown"],
+          ["Rebind", network.rebindingSeconds ? `${network.rebindingSeconds}s` : "unknown"],
+          ["Resolver", network.resolverConfig || "not written"],
+        ];
+        for (const [label, value] of rows) {
+          const row = document.createElement("article");
+          row.className = "mount";
+
+          const left = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = label;
+          left.append(title);
+
+          const right = document.createElement("div");
+          right.textContent = value;
+
+          row.append(left, right);
+          networkExtra.append(row);
         }
       }
 

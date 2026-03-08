@@ -5,7 +5,7 @@ KERNEL_IMAGE ?= $(shell find /boot -maxdepth 1 -name 'vmlinuz-*' -readable 2>/de
 QEMU_HOST_PORT ?= 8080
 QEMU_GUEST_PORT ?= 8080
 QEMU_MEMORY ?= 512
-QEMU_APPEND ?= console=ttyS0 rdinit=/init ip=dhcp
+QEMU_APPEND ?= console=ttyS0 rdinit=/init
 
 INIT_BIN := $(BUILD_DIR)/init
 INITRAMFS := $(BUILD_DIR)/initramfs.cpio.gz
