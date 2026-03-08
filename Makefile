@@ -6,6 +6,9 @@ QEMU_HOST_PORT ?= 8080
 QEMU_GUEST_PORT ?= 8080
 QEMU_MEMORY ?= 512
 QEMU_APPEND ?= console=ttyS0 rdinit=/init
+QEMU_ENABLE_VIRTIO_RNG ?= 1
+QEMU_RNG_OBJECT ?= rng-random,id=rng0,filename=/dev/urandom
+QEMU_RNG_DEVICE ?= virtio-rng-pci,rng=rng0
 
 INIT_BIN := $(BUILD_DIR)/init
 INITRAMFS := $(BUILD_DIR)/initramfs.cpio.gz
@@ -27,10 +30,16 @@ run: $(INITRAMFS)
 		-kernel $(KERNEL_IMAGE) \
 		-initrd $(INITRAMFS) \
 		-append "$(QEMU_APPEND)" \
+		$(if $(filter 1 true yes on,$(QEMU_ENABLE_VIRTIO_RNG)),-object "$(QEMU_RNG_OBJECT)" -device "$(QEMU_RNG_DEVICE)") \
 		-nic user,model=virtio-net-pci,hostfwd=tcp::$(QEMU_HOST_PORT)-:$(QEMU_GUEST_PORT)
 
 smoke: $(INITRAMFS)
-	HOST_PORT=$(QEMU_HOST_PORT) KERNEL_IMAGE=$(KERNEL_IMAGE) ./scripts/qemu-smoke.sh
+	HOST_PORT=$(QEMU_HOST_PORT) \
+	KERNEL_IMAGE=$(KERNEL_IMAGE) \
+	QEMU_ENABLE_VIRTIO_RNG=$(QEMU_ENABLE_VIRTIO_RNG) \
+	QEMU_RNG_OBJECT='$(QEMU_RNG_OBJECT)' \
+	QEMU_RNG_DEVICE='$(QEMU_RNG_DEVICE)' \
+	./scripts/qemu-smoke.sh
 
 clean:
 	rm -rf $(BUILD_DIR)

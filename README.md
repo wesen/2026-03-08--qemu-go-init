@@ -25,6 +25,12 @@ The init binary also accepts:
 - `GO_INIT_DHCP_TIMEOUT=20s` to adjust DHCP wait time
 - `GO_INIT_DHCP_RETRY=5` to adjust retry count
 
+QEMU launch also accepts:
+
+- `QEMU_ENABLE_VIRTIO_RNG=0` to disable the default `virtio-rng` device in repo run paths
+- `QEMU_RNG_OBJECT=...` to override the QEMU RNG backend object
+- `QEMU_RNG_DEVICE=...` to override the attached RNG device
+
 ## Key artifacts
 
 - `cmd/init`: Linux PID 1 HTTP server

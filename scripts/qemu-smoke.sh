@@ -12,6 +12,9 @@ QEMU_APPEND=${QEMU_APPEND:-console=ttyS0 rdinit=/init}
 QEMU_LOG=${QEMU_LOG:-"${BUILD_DIR}/qemu-smoke.log"}
 QEMU_NET_MODEL=${QEMU_NET_MODEL:-virtio-net-pci}
 QEMU_PCAP=${QEMU_PCAP:-}
+QEMU_ENABLE_VIRTIO_RNG=${QEMU_ENABLE_VIRTIO_RNG:-1}
+QEMU_RNG_OBJECT=${QEMU_RNG_OBJECT:-rng-random,id=rng0,filename=/dev/urandom}
+QEMU_RNG_DEVICE=${QEMU_RNG_DEVICE:-virtio-rng-pci,rng=rng0}
 
 if [[ -z "${KERNEL_IMAGE}" ]]; then
   echo "KERNEL_IMAGE is not set and no readable /boot/vmlinuz-* image was found. Set KERNEL_IMAGE to a readable bzImage/vmlinuz path." >&2
@@ -55,7 +58,20 @@ else
   )
 fi
 
-echo "qemu-smoke: kernel=${KERNEL_IMAGE} host_port=${HOST_PORT} guest_port=${GUEST_PORT} model=${QEMU_NET_MODEL} pcap=${QEMU_PCAP:-disabled}" >"${QEMU_LOG}"
+case "${QEMU_ENABLE_VIRTIO_RNG,,}" in
+  1|true|yes|on)
+    QEMU_ARGS+=(
+      -object "${QEMU_RNG_OBJECT}"
+      -device "${QEMU_RNG_DEVICE}"
+    )
+    QEMU_VIRTIO_RNG=enabled
+    ;;
+  *)
+    QEMU_VIRTIO_RNG=disabled
+    ;;
+esac
+
+echo "qemu-smoke: kernel=${KERNEL_IMAGE} host_port=${HOST_PORT} guest_port=${GUEST_PORT} model=${QEMU_NET_MODEL} pcap=${QEMU_PCAP:-disabled} virtio_rng=${QEMU_VIRTIO_RNG}" >"${QEMU_LOG}"
 "${QEMU_BIN}" "${QEMU_ARGS[@]}" >>"${QEMU_LOG}" 2>&1 &
 QEMU_PID=$!
 
