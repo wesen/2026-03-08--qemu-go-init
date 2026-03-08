@@ -36,7 +36,7 @@ This ticket researches how to add a self-hosted SSH application to the existing 
 
 Current status: **active**
 
-Current status detail: research complete, local probe complete, docs complete, and bundle uploaded to reMarkable.
+Current status detail: research complete; implementation tasks have been added and the repo integration work is starting.
 
 ## Topics
 
