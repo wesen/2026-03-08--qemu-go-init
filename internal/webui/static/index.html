@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>qemu-go-init</title>
+    <style>
+      :root {
+        --bg: #07111a;
+        --panel: rgba(7, 17, 26, 0.72);
+        --panel-border: rgba(148, 163, 184, 0.25);
+        --text: #ecfeff;
+        --muted: #b6d4e1;
+        --accent: #f59e0b;
+        --accent-2: #38bdf8;
+        --ok: #34d399;
+        --bad: #f87171;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(56, 189, 248, 0.24), transparent 35%),
+          radial-gradient(circle at top right, rgba(245, 158, 11, 0.2), transparent 28%),
+          linear-gradient(135deg, #020617 0%, #0f172a 46%, #164e63 100%);
+      }
+
+      main {
+        width: min(1040px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0 56px;
+      }
+
+      .hero,
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 24px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 18px 60px rgba(2, 6, 23, 0.35);
+      }
+
+      .hero {
+        padding: 28px;
+        margin-bottom: 22px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.12);
+        color: var(--accent-2);
+        font-size: 0.85rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 18px 0 12px;
+        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+        font-size: clamp(2.2rem, 5vw, 4.6rem);
+        line-height: 0.95;
+      }
+
+      p {
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.6;
+      }
+
+      .grid {
+        display: grid;
+        gap: 22px;
+      }
+
+      .stats {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .panel {
+        padding: 24px;
+      }
+
+      .label {
+        margin: 0 0 8px;
+        font-size: 0.82rem;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        text-transform: uppercase;
+      }
+
+      .value {
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 700;
+      }
+
+      .mounts {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .mount {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: rgba(15, 23, 42, 0.65);
+      }
+
+      .mount strong {
+        display: block;
+        font-size: 1rem;
+      }
+
+      .mount small {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+      }
+
+      .status-ok {
+        color: var(--ok);
+      }
+
+      .status-bad {
+        color: var(--bad);
+      }
+
+      @media (max-width: 700px) {
+        main {
+          padding-top: 28px;
+        }
+
+        .hero,
+        .panel {
+          border-radius: 18px;
+        }
+
+        .mount {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="eyebrow">QEMU guest / Go PID 1 / embedded web UI</div>
+        <h1>Single binary init, live in a tiny VM.</h1>
+        <p>
+          This page is served by a statically linked Go binary running as <code>/init</code> inside
+          an initramfs-backed Linux guest. QEMU user networking forwards the host port into the
+          guest so the demo can be inspected from the workstation browser.
+        </p>
+      </section>
+
+      <section class="grid stats">
+        <article class="panel">
+          <p class="label">PID</p>
+          <p class="value" id="pid">...</p>
+        </article>
+        <article class="panel">
+          <p class="label">Hostname</p>
+          <p class="value" id="hostname">...</p>
+        </article>
+        <article class="panel">
+          <p class="label">Runtime</p>
+          <p class="value" id="runtime">...</p>
+        </article>
+        <article class="panel">
+          <p class="label">Listen address</p>
+          <p class="value" id="listen">...</p>
+        </article>
+      </section>
+
+      <section class="panel" style="margin-top: 22px;">
+        <p class="label">Boot status</p>
+        <p class="value" id="started">...</p>
+        <p id="uptime">Waiting for status...</p>
+        <div class="mounts" id="mounts"></div>
+      </section>
+    </main>
+
+    <script>
+      async function loadStatus() {
+        const response = await fetch("/api/status", { cache: "no-store" });
+        const data = await response.json();
+
+        document.getElementById("pid").textContent = data.pid;
+        document.getElementById("hostname").textContent = data.hostname || "unknown";
+        document.getElementById("runtime").textContent = `${data.goVersion} on ${data.goos}/${data.goarch}`;
+        document.getElementById("listen").textContent = data.listenAddr;
+        document.getElementById("started").textContent = `Started ${data.startedAt}`;
+        document.getElementById("uptime").textContent = `Current uptime: ${data.uptime}`;
+
+        const mounts = document.getElementById("mounts");
+        mounts.innerHTML = "";
+        for (const mount of data.mounts) {
+          const row = document.createElement("article");
+          row.className = "mount";
+
+          const left = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = `${mount.target} (${mount.fsType})`;
+          const detail = document.createElement("small");
+          detail.textContent = mount.source;
+          left.append(title, detail);
+
+          const right = document.createElement("div");
+          right.className = mount.mounted ? "status-ok" : "status-bad";
+          right.textContent = mount.mounted ? "mounted" : mount.error || "failed";
+
+          row.append(left, right);
+          mounts.append(row);
+        }
+      }
+
+      loadStatus();
+      setInterval(loadStatus, 5000);
+    </script>
+  </body>
+</html>

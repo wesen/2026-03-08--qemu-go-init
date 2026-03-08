@@ -1,0 +1,5 @@
+# Default ignores for docmgr
+.git/
+_templates/
+_guidelines/
+2026/03/08/QEMU-GO-INIT-001--single-binary-go-init-that-serves-a-webpage-in-qemu/sources/local/qemu-go-guide.md
