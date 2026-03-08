@@ -43,6 +43,7 @@ The starting point for this ticket was:
 
 - `go-go-goja` already provides a Bobatea adapter:
   - `pkg/repl/adapters/bobatea/javascript.go`
+- the adapter path is not guest-safe for this repo because it pulls in tree-sitter parser code that breaks the static `CGO_ENABLED=0` build
 - Bobatea REPL is not just a local child widget:
   - it needs an event bus
   - it needs `repl.RegisterReplToTimelineTransformer(bus)`
@@ -90,6 +91,20 @@ sed -n '1,220p' $(go env GOPATH)/pkg/mod/github.com/charmbracelet/wish@v1.4.7/bu
    - evaluator name: `JavaScript`
    - prompt: `js>`
    - a streamed result event for `nums.reduce(...)` returning `6`
+10. Added repo-local module wiring and the first implementation of `internal/jsrepl`, initially using the higher-level `go-go-goja` Bobatea adapter.
+11. Refactored `internal/bbsapp` into a pointer-owned model so it could hold long-lived REPL state and attach the concrete `*tea.Program`.
+12. Updated `cmd/bbs` and `internal/sshbbs` so both the host-native and Wish SSH paths attach the Bobatea UI forwarder correctly.
+13. First `make smoke` failed during the static guest build with:
+
+```text
+github.com/tree-sitter/tree-sitter-javascript/bindings/go: build constraints exclude all Go files
+```
+
+14. Root cause: the imported `go-go-goja` JavaScript REPL adapter brings in parser/autocomplete code that depends on tree-sitter bindings, and that path is not viable for the static guest `/init` binary.
+15. Pivoted to a repo-owned Bobatea evaluator that uses `go-go-goja/engine` directly and implements the small `bobatea/pkg/repl.Evaluator` interface in-repo.
+16. Preserved the `bbs` JS API by exporting hidden Go callbacks and loading a tiny JS shim that converts JSON payloads into normal JavaScript arrays and objects.
+17. Re-ran `go test ./... -count=1`; it passed.
+18. Re-ran `make smoke KERNEL_IMAGE=/tmp/qemu-vmlinuz QEMU_HOST_PORT=18084 QEMU_SSH_HOST_PORT=10026`; it passed.
 
 ## Related
 

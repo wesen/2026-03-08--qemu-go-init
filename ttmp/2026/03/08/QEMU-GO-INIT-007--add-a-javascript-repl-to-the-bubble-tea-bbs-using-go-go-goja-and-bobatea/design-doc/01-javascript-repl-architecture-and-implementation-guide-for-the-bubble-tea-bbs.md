@@ -32,7 +32,12 @@ The existing system already has three important pieces:
 
 This ticket adds a fourth piece: an embedded JavaScript REPL mode backed by `go-go-goja` for evaluation and `bobatea` for the transcript-oriented REPL UI. The BBS remains the outer shell. The REPL is not a separate binary and not a subprocess. It becomes another application mode, similar to the existing browse and compose modes.
 
-The critical architectural constraint is that Bobatea’s REPL model depends on an event bus and a UI forwarder that must be wired to the actual `*tea.Program`. That requirement affects both:
+The critical architectural constraints are:
+
+- Bobatea’s REPL model depends on an event bus and a UI forwarder that must be wired to the actual `*tea.Program`.
+- The guest `/init` binary is built with `CGO_ENABLED=0`, so any JS path that requires tree-sitter or other CGO-backed parsing cannot ship inside the guest runtime.
+
+Those constraints affect both:
 
 - the host-native `cmd/bbs` launch path
 - the Wish SSH path, which currently uses `wishbubbletea.Middleware(func(sess) (tea.Model, []tea.ProgramOption))`
@@ -108,6 +113,8 @@ The REPL subsystem is responsible for:
 - registering `timeline.RegisterUIForwarder` once a concrete `*tea.Program` exists
 - closing evaluator resources when the app shuts down
 
+In the final implementation, “creating the JavaScript evaluator” means building a small Bobatea `Evaluator` implementation in this repo on top of `go-go-goja/engine`. The first attempt used the higher-level `go-go-goja` REPL adapter, but that path pulled in tree-sitter packages that were incompatible with the static guest build.
+
 ### Suggested package split
 
 - `internal/jsrepl`
@@ -125,13 +132,13 @@ The REPL subsystem is responsible for:
 ```go
 type REPLSurface struct {
     bus       *eventbus.Bus
-    evaluator *jsadapter.JavaScriptEvaluator
+    evaluator *evaluator
     model     *repl.Model
     cancel    context.CancelFunc
 }
 
 func NewREPLSurface() (*REPLSurface, error) {
-    evaluator := jsadapter.NewJavaScriptEvaluatorWithDefaults()
+    evaluator := newEvaluatorFromGoGoGojaEngine()
     bus := eventbus.NewInMemoryBus()
     repl.RegisterReplToTimelineTransformer(bus)
     model := repl.NewModel(evaluator, replConfig(), bus.Publisher)
@@ -217,6 +224,15 @@ Reasoning:
 - the default Wish handler API only returns `(tea.Model, []tea.ProgramOption)`
 - the program handler path cleanly exposes program construction
 
+### Decision: use `go-go-goja/engine` instead of the higher-level REPL adapter
+
+Reasoning:
+
+- the adapter path worked in the local probe
+- the adapter path failed in the real guest build because it pulled in tree-sitter parser code
+- the lower-level engine path still satisfies the user requirement to use `go-go-goja`
+- implementing the Bobatea `Evaluator` interface directly is small enough to own in this repo
+
 ## Alternatives Considered
 
 ### Launch a separate JS REPL binary over SSH
@@ -242,6 +258,14 @@ Rejected because:
 - ignores the user’s explicit package choice
 - throws away completion/help/timeline functionality already provided upstream
 
+### Use the shipped `go-go-goja` Bobatea adapter directly
+
+Rejected for the guest build because:
+
+- it pulls in parser/autocomplete code that depends on tree-sitter
+- the init binary is built with `CGO_ENABLED=0`
+- the first QEMU smoke run failed at build time with the tree-sitter package set
+
 ### Depend on external shell tools or ncurses databases inside the guest
 
 Rejected because:
@@ -265,16 +289,17 @@ Rejected because:
 
 ## Open Questions
 
-Open items to verify during implementation:
+Open items after implementation:
 
-- whether the repo’s current Bubble Tea/Lip Gloss versions can coexist cleanly with the local Bobatea/go-go-goja dependency graph
-- whether the REPL should expose BBS store helpers into JavaScript in this first ticket or stay as a generic JS surface
-- whether the SSH path needs explicit renderer sizing tweaks once the embedded REPL is live
+- whether the stderr noise from module registration and Watermill router startup should be suppressed in a follow-up polish pass
+- whether we want to reintroduce completion/help features later through a CGO-free parser strategy
+- whether the REPL should expose richer BBS/database APIs beyond the initial `bbs.listMessages`, `bbs.post`, and `bbs.postAs` surface
 
 ## References
 
 - Local Bobatea REPL model: `/home/manuel/code/wesen/corporate-headquarters/bobatea/pkg/repl/model.go`
 - Local Bobatea event bus: `/home/manuel/code/wesen/corporate-headquarters/bobatea/pkg/eventbus/eventbus.go`
 - Local Bobatea UI forwarder: `/home/manuel/code/wesen/corporate-headquarters/bobatea/pkg/timeline/wm_forwarder.go`
-- Local go-go-goja Bobatea adapter: `/home/manuel/code/wesen/corporate-headquarters/go-go-goja/pkg/repl/adapters/bobatea/javascript.go`
+- Local go-go-goja engine factory: `/home/manuel/code/wesen/corporate-headquarters/go-go-goja/engine/factory.go`
+- Local go-go-goja runtime: `/home/manuel/code/wesen/corporate-headquarters/go-go-goja/engine/runtime.go`
 - Wish Bubble Tea middleware: `$(go env GOPATH)/pkg/mod/github.com/charmbracelet/wish@v1.4.7/bubbletea/tea.go`

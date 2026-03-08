@@ -50,7 +50,8 @@ The BBS state is stored in SQLite inside the shared-state mount. The new REPL fe
 - `internal/bbsstore`
   - SQLite store for posts
 - local `go-go-goja`
-  - JavaScript evaluation engine
+  - JavaScript runtime engine
+  - used at the `engine` layer in the final implementation because the higher-level REPL adapter path was not compatible with the static `CGO_ENABLED=0` guest build
 - local `bobatea`
   - transcript-style REPL UI shell
 
@@ -61,7 +62,8 @@ The BBS state is stored in SQLite inside the shared-state mount. The new REPL fe
 - Repo BBS model: `/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/bbsapp/model.go`
 - Repo host BBS command: `/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/bbs/main.go`
 - Repo Wish BBS middleware: `/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshbbs/middleware.go`
-- Local JS evaluator adapter: `/home/manuel/code/wesen/corporate-headquarters/go-go-goja/pkg/repl/adapters/bobatea/javascript.go`
+- Repo JS REPL wrapper: `/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/jsrepl/surface.go`
+- Local go-go-goja engine factory: `/home/manuel/code/wesen/corporate-headquarters/go-go-goja/engine/factory.go`
 - Local Bobatea REPL model: `/home/manuel/code/wesen/corporate-headquarters/bobatea/pkg/repl/model.go`
 
 ### Minimum integration checklist
@@ -77,8 +79,11 @@ The BBS state is stored in SQLite inside the shared-state mount. The new REPL fe
 #### go-go-goja
 
 ```go
-evaluator, err := jsadapter.NewJavaScriptEvaluatorWithDefaults()
-defer evaluator.Close()
+factory, err := ggjengine.NewBuilder().
+  WithModules(ggjengine.DefaultRegistryModules()).
+  Build()
+runtime, err := factory.NewRuntime(context.Background())
+defer runtime.Close(context.Background())
 ```
 
 #### bobatea
@@ -126,6 +131,17 @@ Create a small experiment under this ticket’s `scripts/` directory, use local 
 - the Bobatea REPL model instantiates
 - the bus runs
 - one evaluation can emit transcript events
+
+### Why the implementation does not use the higher-level JS REPL adapter
+
+The first implementation did use the Bobatea adapter shipped inside `go-go-goja`. That version worked in a local probe, but it failed in the real guest build because the adapter path brings in tree-sitter-based parsing and completion code that does not build under `CGO_ENABLED=0`.
+
+The final implementation keeps the same product behavior while switching one layer lower:
+
+- keep `go-go-goja` for the JavaScript runtime
+- keep `bobatea` for the REPL UI
+- implement only the small evaluator bridge in this repo
+- disable autocomplete, help drawer, and command palette in the first guest-safe delivery
 
 ### Example: host-native validation target
 
