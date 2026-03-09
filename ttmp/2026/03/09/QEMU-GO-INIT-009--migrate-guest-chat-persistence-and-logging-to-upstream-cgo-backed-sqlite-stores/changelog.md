@@ -46,3 +46,7 @@ Added host-side QEMU serial log import, validated guest turn and timeline counts
 - /home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/importqemulogs/main.go — Host utility that imports QEMU serial logs into SQLite
 - /home/manuel/code/wesen/2026-03-08--qemu-go-init/scripts/qemu-smoke.sh — Imports host-side QEMU logs after smoke completion
 - /home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/debug.go — Reports runtime row counts for turns and timeline entities without mutating the databases
+
+## 2026-03-09
+
+Closed the ticket docs with a clean `docmgr doctor` run and uploaded the bundle to reMarkable at `/ai/2026/03/09/QEMU-GO-INIT-009`.

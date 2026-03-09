@@ -422,3 +422,31 @@ Observed guest log runtime status from the still-running CGO validation VM on po
   - inspect the guest log DB
   - inspect the host QEMU log DB
 - Read-only debug queries matter for SQLite. A careless debug endpoint can mutate the system it is trying to observe.
+
+### Delivery
+
+Final delivery commands:
+
+```bash
+docmgr doctor --ticket QEMU-GO-INIT-009 --stale-after 30
+remarquee status
+remarquee cloud account --non-interactive
+remarquee upload bundle ttmp/2026/03/09/QEMU-GO-INIT-009--migrate-guest-chat-persistence-and-logging-to-upstream-cgo-backed-sqlite-stores/index.md \
+  ttmp/2026/03/09/QEMU-GO-INIT-009--migrate-guest-chat-persistence-and-logging-to-upstream-cgo-backed-sqlite-stores/design-doc/01-cgo-backed-sqlite-persistence-and-runtime-packaging-plan-for-qemu-go-init.md \
+  ttmp/2026/03/09/QEMU-GO-INIT-009--migrate-guest-chat-persistence-and-logging-to-upstream-cgo-backed-sqlite-stores/reference/02-implementation-guide.md \
+  ttmp/2026/03/09/QEMU-GO-INIT-009--migrate-guest-chat-persistence-and-logging-to-upstream-cgo-backed-sqlite-stores/reference/01-diary.md \
+  ttmp/2026/03/09/QEMU-GO-INIT-009--migrate-guest-chat-persistence-and-logging-to-upstream-cgo-backed-sqlite-stores/tasks.md \
+  ttmp/2026/03/09/QEMU-GO-INIT-009--migrate-guest-chat-persistence-and-logging-to-upstream-cgo-backed-sqlite-stores/changelog.md \
+  --name "QEMU-GO-INIT-009 bundle" \
+  --remote-dir "/ai/2026/03/09/QEMU-GO-INIT-009" \
+  --toc-depth 2 \
+  --force
+remarquee cloud ls /ai/2026/03/09/QEMU-GO-INIT-009 --long --non-interactive
+```
+
+Observed upload verification:
+
+```text
+OK: uploaded QEMU-GO-INIT-009 bundle.pdf -> /ai/2026/03/09/QEMU-GO-INIT-009
+[f] QEMU-GO-INIT-009 bundle
+```
