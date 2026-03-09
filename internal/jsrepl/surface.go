@@ -65,8 +65,12 @@ func New(store Store, options Options) (*Surface, error) {
 
 	cfg := bobarepl.DefaultConfig()
 	cfg.Title = "qemu-go-init JavaScript REPL"
-	cfg.Placeholder = "Try: 2 + 2, bbs.listMessages()[0], bbs.post(\"subject\", \"body\")"
+	cfg.Placeholder = "Try: 2 + 2, bbs.listMessages()[0], bbs.post(\"subject\", \"body\") | Tab completion | Alt+H docs | Ctrl+P palette"
 	cfg.EnableExternalEditor = false
+	cfg.Autocomplete.TriggerKeys = []string{"tab"}
+	cfg.Autocomplete.AcceptKeys = []string{"enter", "tab"}
+	cfg.Autocomplete.FocusToggleKey = "ctrl+t"
+	cfg.HelpDrawer.PrefetchWhenHidden = true
 
 	if err := installGlobals(coreEvaluator, store, options); err != nil {
 		_ = coreEvaluator.Close()
