@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/manuel/wesen/qemu-go-init/internal/aichat"
 	"github.com/manuel/wesen/qemu-go-init/internal/bbsstore"
 	"github.com/manuel/wesen/qemu-go-init/internal/boot"
@@ -17,9 +19,11 @@ import (
 	"github.com/manuel/wesen/qemu-go-init/internal/sshbbs"
 	"github.com/manuel/wesen/qemu-go-init/internal/storage"
 	"github.com/manuel/wesen/qemu-go-init/internal/webui"
+	"github.com/manuel/wesen/qemu-go-init/internal/zlog"
 )
 
 func main() {
+	zlog.Configure(zerolog.WarnLevel)
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds|log.LUTC)
 	boot.StartChildReaper(logger)
 
@@ -50,6 +54,7 @@ func main() {
 		boot.Halt(logger)
 	}
 	defer store.Close()
+	configureGuestTLSDefaults()
 	chatOptions := aichat.Options{
 		Title:     "qemu-go-init AI chat",
 		StateRoot: bbsRoot,
@@ -109,4 +114,13 @@ func hostname() string {
 		return ""
 	}
 	return value
+}
+
+func configureGuestTLSDefaults() {
+	const bundlePath = "/etc/ssl/certs/ca-certificates.crt"
+	if _, err := os.Stat(bundlePath); err == nil {
+		if _, exists := os.LookupEnv("SSL_CERT_FILE"); !exists {
+			_ = os.Setenv("SSL_CERT_FILE", bundlePath)
+		}
+	}
 }

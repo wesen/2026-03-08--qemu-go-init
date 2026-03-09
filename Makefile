@@ -17,6 +17,8 @@ QEMU_SHARED_STATE_HOST_PATH ?= $(BUILD_DIR)/shared-state
 QEMU_SHARED_STATE_MOUNT_TAG ?= hostshare
 QEMU_SHARED_STATE_FSDEV_ID ?= hostsharefs
 PINOCCHIO_HOST_CONFIG_DIR ?= $(HOME)/.config/pinocchio
+PINOCCHIO_HOST_CONFIG_FILE ?= $(if $(wildcard $(HOME)/.pinocchio/config.yaml),$(HOME)/.pinocchio/config.yaml,$(PINOCCHIO_HOST_CONFIG_DIR)/config.yaml)
+PINOCCHIO_HOST_PROFILES_FILE ?= $(PINOCCHIO_HOST_CONFIG_DIR)/profiles.yaml
 QEMU_SHARED_PINOCCHIO_DIR ?= $(QEMU_SHARED_STATE_HOST_PATH)/pinocchio
 MKFS_EXT4 ?= mkfs.ext4
 QEMU_ENABLE_VIRTIO_RNG ?= 1
@@ -29,6 +31,8 @@ INITRAMFS_NETFS_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/fs/netfs/net
 INITRAMFS_9P_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/fs/9p/9p.ko.zst
 INITRAMFS_9PNET_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/net/9p/9pnet.ko.zst
 INITRAMFS_9PNET_VIRTIO_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/net/9p/9pnet_virtio.ko.zst
+INITRAMFS_ENABLE_CA_CERTS ?= 1
+INITRAMFS_CA_CERT_BUNDLE_SRC ?= /etc/ssl/certs/ca-certificates.crt
 
 INIT_BIN := $(BUILD_DIR)/init
 INITRAMFS := $(BUILD_DIR)/initramfs.cpio.gz
@@ -85,6 +89,7 @@ $(INIT_BIN): $(shell find cmd internal -type f -name '*.go')
 
 $(INITRAMFS): $(INIT_BIN)
 	$(GO) run ./cmd/mkinitramfs -init-bin $(INIT_BIN) -output $(INITRAMFS) \
+		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_CA_CERTS)),-file-map "/etc/ssl/certs/ca-certificates.crt=$(INITRAMFS_CA_CERT_BUNDLE_SRC)") \
 		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_VIRTIO_RNG_MODULE)),-module-map "/lib/modules/virtio_rng.ko=$(INITRAMFS_VIRTIO_RNG_MODULE_SRC)") \
 		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_9P_MODULES)),-module-map "/lib/modules/netfs.ko=$(INITRAMFS_NETFS_MODULE_SRC)" -module-map "/lib/modules/9p.ko=$(INITRAMFS_9P_MODULE_SRC)" -module-map "/lib/modules/9pnet.ko=$(INITRAMFS_9PNET_MODULE_SRC)" -module-map "/lib/modules/9pnet_virtio.ko=$(INITRAMFS_9PNET_VIRTIO_MODULE_SRC)")
 
@@ -98,5 +103,6 @@ shared-state-dir:
 
 pinocchio-shared-config: shared-state-dir
 	mkdir -p $(QEMU_SHARED_PINOCCHIO_DIR)
-	if [ -f "$(PINOCCHIO_HOST_CONFIG_DIR)/config.yaml" ]; then cp "$(PINOCCHIO_HOST_CONFIG_DIR)/config.yaml" "$(QEMU_SHARED_PINOCCHIO_DIR)/config.yaml"; fi
-	if [ -f "$(PINOCCHIO_HOST_CONFIG_DIR)/profiles.yaml" ]; then cp "$(PINOCCHIO_HOST_CONFIG_DIR)/profiles.yaml" "$(QEMU_SHARED_PINOCCHIO_DIR)/profiles.yaml"; fi
+	rm -f "$(QEMU_SHARED_PINOCCHIO_DIR)/config.yaml" "$(QEMU_SHARED_PINOCCHIO_DIR)/profiles.yaml"
+	if [ -f "$(PINOCCHIO_HOST_CONFIG_FILE)" ]; then cp "$(PINOCCHIO_HOST_CONFIG_FILE)" "$(QEMU_SHARED_PINOCCHIO_DIR)/config.yaml"; fi
+	if [ -f "$(PINOCCHIO_HOST_PROFILES_FILE)" ]; then cp "$(PINOCCHIO_HOST_PROFILES_FILE)" "$(QEMU_SHARED_PINOCCHIO_DIR)/profiles.yaml"; fi

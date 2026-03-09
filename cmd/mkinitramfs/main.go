@@ -27,18 +27,21 @@ func main() {
 		initPath = flag.String("init-bin", "", "path to the statically linked /init binary")
 		output   = flag.String("output", "", "path to the initramfs.cpio.gz output file")
 		modules  moduleFlags
+		files    fileFlags
 	)
 	flag.Var(&modules, "module-map", "optional guestPath=hostPath mapping for a kernel module to include in the initramfs")
+	flag.Var(&files, "file-map", "optional guestPath=hostPath mapping for a regular file to include in the initramfs")
 
 	flag.Parse()
 
-	if err := run(*initPath, *output, modules); err != nil {
+	if err := run(*initPath, *output, modules, files); err != nil {
 		fmt.Fprintf(os.Stderr, "mkinitramfs: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 type moduleFlags []string
+type fileFlags []string
 
 func (m *moduleFlags) String() string {
 	return strings.Join(*m, ",")
@@ -49,7 +52,16 @@ func (m *moduleFlags) Set(value string) error {
 	return nil
 }
 
-func run(initPath string, output string, modules moduleFlags) error {
+func (f *fileFlags) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *fileFlags) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+func run(initPath string, output string, modules moduleFlags, files fileFlags) error {
 	if initPath == "" {
 		return fmt.Errorf("-init-bin is required")
 	}
@@ -67,7 +79,7 @@ func run(initPath string, output string, modules moduleFlags) error {
 		return fmt.Errorf("stat init binary: %w", err)
 	}
 
-	extras, err := readExtraFiles(modules)
+	extras, err := readExtraFiles(modules, files)
 	if err != nil {
 		return err
 	}
@@ -89,12 +101,12 @@ func run(initPath string, output string, modules moduleFlags) error {
 	return nil
 }
 
-func readExtraFiles(moduleSpecs []string) ([]archiveFile, error) {
-	if len(moduleSpecs) == 0 {
+func readExtraFiles(moduleSpecs []string, fileSpecs []string) ([]archiveFile, error) {
+	if len(moduleSpecs) == 0 && len(fileSpecs) == 0 {
 		return nil, nil
 	}
 
-	files := make([]archiveFile, 0, len(moduleSpecs))
+	files := make([]archiveFile, 0, len(moduleSpecs)+len(fileSpecs))
 	for _, spec := range moduleSpecs {
 		guestPath, hostPath, err := parseModuleSpec(spec)
 		if err != nil {
@@ -116,6 +128,30 @@ func readExtraFiles(moduleSpecs []string) ([]archiveFile, error) {
 			Data:    data,
 			ModTime: info.ModTime().UTC(),
 			Mode:    0o644,
+		})
+	}
+
+	for _, spec := range fileSpecs {
+		guestPath, hostPath, err := parseModuleSpec(spec)
+		if err != nil {
+			return nil, err
+		}
+
+		data, err := os.ReadFile(hostPath)
+		if err != nil {
+			return nil, fmt.Errorf("read file %s: %w", hostPath, err)
+		}
+
+		info, err := os.Stat(hostPath)
+		if err != nil {
+			return nil, fmt.Errorf("stat file %s: %w", hostPath, err)
+		}
+
+		files = append(files, archiveFile{
+			Path:    strings.TrimPrefix(guestPath, "/"),
+			Data:    data,
+			ModTime: info.ModTime().UTC(),
+			Mode:    info.Mode().Perm(),
 		})
 	}
 	return files, nil

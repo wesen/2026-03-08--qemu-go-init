@@ -10,9 +10,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/manuel/wesen/qemu-go-init/internal/bbsapp"
 	"github.com/manuel/wesen/qemu-go-init/internal/bbsstore"
+	"github.com/manuel/wesen/qemu-go-init/internal/zlog"
+	"github.com/rs/zerolog"
 )
 
 func main() {
+	zlog.Configure(zerolog.WarnLevel)
 	var stateRoot string
 	flag.StringVar(&stateRoot, "state-root", defaultStateRoot(), "directory containing the shared BBS state")
 	flag.Parse()
