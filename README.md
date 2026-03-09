@@ -19,6 +19,10 @@ If your distro keeps `/boot/vmlinuz-*` root-only, pass a readable kernel image e
 KERNEL_IMAGE=/path/to/readable/bzImage make run
 ```
 
+## Deep documentation
+
+- [System Analysis, Design, Implementation, and Postmortem](SYSTEM-ANALYSIS-DESIGN-IMPLEMENTATION-POSTMORTEM.md)
+
 The init binary also accepts:
 
 - `GO_INIT_NETWORK_INTERFACE=eth0` to force a specific NIC
