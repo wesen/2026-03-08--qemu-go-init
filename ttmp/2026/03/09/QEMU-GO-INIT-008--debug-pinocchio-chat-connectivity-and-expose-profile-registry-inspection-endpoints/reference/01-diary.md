@@ -14,8 +14,8 @@ Intent: long-term
 Owners: []
 RelatedFiles: []
 ExternalSources: []
-Summary: "Recorded the AI-chat debug endpoints, validation steps, and the first concrete guest findings: missing config and missing CA roots."
-LastUpdated: 2026-03-09T19:37:40Z
+Summary: "Recorded the AI-chat debug endpoints, the initial guest failures, and the second slice that fixed guest config sourcing, CA roots, log reduction, and visible UI error propagation."
+LastUpdated: 2026-03-09T20:03:00Z
 WhatFor: ""
 WhenToUse: ""
 ---
@@ -131,6 +131,49 @@ Interpretation:
 - There are at least two guest-side prerequisites still missing for successful provider calls:
   - a usable Pinocchio config source containing credentials,
   - a CA trust store or other TLS-root strategy for outbound HTTPS.
+
+Continuation plan:
+
+- Fix host config sourcing.
+  - The current Makefile copies `config.yaml` from `$(HOME)/.config/pinocchio/config.yaml`.
+  - The active user setup appears to keep the config at `~/.pinocchio/config.yaml` while `profiles.yaml` still lives at `~/.config/pinocchio/profiles.yaml`.
+  - The next implementation slice should stop assuming a single directory for both files.
+- Add CA roots to the guest.
+  - The most pragmatic change is to bake a PEM bundle such as `/etc/ssl/certs/ca-certificates.crt` into the initramfs and, if needed, set `SSL_CERT_FILE` for the guest runtime.
+- Reduce terminal log noise.
+  - The provider failure is currently visible in logs, but the Bobatea/Pinocchio trace flood makes the TUI harder to inspect while testing.
+  - The next slice should either lower the log level or redirect those logs away from the interactive SSH session.
+- Render backend failures explicitly.
+  - The current backend logs the provider error and still returns `BackendFinishedMsg`.
+  - The next slice should emit an error message that Bobatea can render as `StateError` or as a visible assistant/timeline failure entry.
+
+Follow-up implementation results:
+
+- Host config sourcing:
+  - Updated [Makefile](/home/manuel/code/wesen/2026-03-08--qemu-go-init/Makefile) to split `PINOCCHIO_HOST_CONFIG_FILE` and `PINOCCHIO_HOST_PROFILES_FILE`.
+  - Default config lookup now prefers `~/.pinocchio/config.yaml` if it exists.
+  - `profiles.yaml` continues to default to `~/.config/pinocchio/profiles.yaml`.
+  - The shared-state sync now removes stale guest copies before copying the current host files.
+- Guest TLS trust:
+  - Extended [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/mkinitramfs/main.go) with generic `-file-map` support for regular files in addition to `-module-map`.
+  - Updated [Makefile](/home/manuel/code/wesen/2026-03-08--qemu-go-init/Makefile) to bake `/etc/ssl/certs/ca-certificates.crt` into the initramfs.
+  - Updated [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go) to set `SSL_CERT_FILE` to that bundle path when present.
+- Log reduction:
+  - Added [config.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/zlog/config.go).
+  - Both [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go) and [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/bbs/main.go) now set the default zerolog level to `warn`, overridable with `GO_INIT_ZEROLOG_LEVEL`.
+- Visible UI error handling:
+  - Updated Pinocchio's [backend.go](/home/manuel/code/wesen/corporate-headquarters/pinocchio/pkg/ui/backend.go) so `handle.Wait()` failures return `boba_chat.ErrorMsg(err)`.
+  - Added [backend_test.go](/home/manuel/code/wesen/corporate-headquarters/pinocchio/pkg/ui/backend_test.go) to lock that behavior in.
+  - Updated Bobatea's [model.go](/home/manuel/code/wesen/corporate-headquarters/bobatea/pkg/chat/model.go) so entering error state recomputes layout and dismissing an error refocuses input.
+
+Validation after follow-up work:
+
+- `go test ./cmd/init ./cmd/bbs ./cmd/mkinitramfs ./internal/aichat ./internal/webui ./internal/zlog -count=1`
+- `go test ./pkg/ui -count=1` in the Pinocchio repo
+- `go test ./pkg/chat -count=1` in the Bobatea repo
+- live guest revalidation:
+  - `/api/debug/aichat/runtime` showed `config.yaml` present with the expected layered OpenAI defaults
+  - `/api/debug/aichat/https-probe` returned `200 OK`
 
 ## Related
 

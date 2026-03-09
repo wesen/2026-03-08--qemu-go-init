@@ -14,8 +14,8 @@ Intent: long-term
 Owners: []
 RelatedFiles: []
 ExternalSources: []
-Summary: "Added live AI-chat debug endpoints and confirmed the current guest failure mode is missing Pinocchio config plus missing CA roots for outbound TLS."
-LastUpdated: 2026-03-09T19:37:40Z
+Summary: "Added live AI-chat debug endpoints, then fixed guest config sourcing, CA trust, log noise, and backend error propagation so chat failures can render visibly in the TUI."
+LastUpdated: 2026-03-09T20:03:00Z
 WhatFor: ""
 WhenToUse: ""
 ---
@@ -37,9 +37,10 @@ Current status: **active**
 
 Latest findings:
 
-- The BBS chat path resolves `gpt-5-nano` from the shared `profiles.yaml`.
-- The guest currently sees `/var/lib/go-init/shared/pinocchio/profiles.yaml` but not `/var/lib/go-init/shared/pinocchio/config.yaml`.
-- The new HTTPS probe reaches DNS/connect/TLS for `https://api.openai.com/v1/models` and then fails with `x509: certificate signed by unknown authority`.
+- The BBS chat path still resolves `gpt-5-nano` from the shared `profiles.yaml`.
+- The guest now sees `/var/lib/go-init/shared/pinocchio/config.yaml` and resolves the expected `openai-api-key`.
+- The guest now verifies provider TLS successfully; `/api/debug/aichat/https-probe` returns `200 OK`.
+- Pinocchio's backend now returns `ErrorMsg` on inference failures so the TUI can show an explicit error instead of only logging and silently finishing.
 
 ## Topics
 
