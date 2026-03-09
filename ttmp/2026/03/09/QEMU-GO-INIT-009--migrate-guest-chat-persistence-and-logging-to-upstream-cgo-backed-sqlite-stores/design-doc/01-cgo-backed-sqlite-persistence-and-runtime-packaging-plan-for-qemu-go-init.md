@@ -233,6 +233,16 @@ mkinitramfs(
 )
 ```
 
+Observed on the current guest binary after enabling CGO, before importing the upstream stores:
+
+```text
+build/init: dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2
+libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6
+/lib64/ld-linux-x86-64.so.2
+```
+
+That means the packaging pipeline is already proving the right shape for the later upstream store import. When the guest starts linking more CGO-backed packages, the same dependency collector will stage any additional `.so` files reported by `ldd`.
+
 ### Phase 2: Runtime State Layout
 
 Add a stable runtime directory layout under persistent/shared storage:

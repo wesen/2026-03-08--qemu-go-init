@@ -14,3 +14,14 @@ Documented the CGO migration architecture, added the runtime probe script, and a
 - /home/manuel/code/wesen/2026-03-08--qemu-go-init/ttmp/2026/03/09/QEMU-GO-INIT-009--migrate-guest-chat-persistence-and-logging-to-upstream-cgo-backed-sqlite-stores/design-doc/01-cgo-backed-sqlite-persistence-and-runtime-packaging-plan-for-qemu-go-init.md — Primary architecture and migration plan
 - /home/manuel/code/wesen/2026-03-08--qemu-go-init/ttmp/2026/03/09/QEMU-GO-INIT-009--migrate-guest-chat-persistence-and-logging-to-upstream-cgo-backed-sqlite-stores/scripts/cgo-runtime-probe.sh — Reusable probe for CGO guest dependencies
 
+
+## 2026-03-09
+
+Enabled a dynamically linked CGO guest build, added automatic ELF runtime dependency collection, and proved the packaged guest still boots under QEMU smoke.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-03-08--qemu-go-init/Makefile — Switch guest build to CGO and generate runtime dependency maps
+- /home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/mkinitramfs/main.go — Add file-map-file support for generated runtime dependency lists
+- /home/manuel/code/wesen/2026-03-08--qemu-go-init/scripts/collect-elf-runtime.sh — Collect loader and shared library mappings for initramfs packaging
+

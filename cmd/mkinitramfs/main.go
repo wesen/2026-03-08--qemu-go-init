@@ -24,17 +24,19 @@ type archiveFile struct {
 
 func main() {
 	var (
-		initPath = flag.String("init-bin", "", "path to the statically linked /init binary")
+		initPath = flag.String("init-bin", "", "path to the /init binary")
 		output   = flag.String("output", "", "path to the initramfs.cpio.gz output file")
 		modules  moduleFlags
 		files    fileFlags
+		fileSets fileSetFlags
 	)
 	flag.Var(&modules, "module-map", "optional guestPath=hostPath mapping for a kernel module to include in the initramfs")
 	flag.Var(&files, "file-map", "optional guestPath=hostPath mapping for a regular file to include in the initramfs")
+	flag.Var(&fileSets, "file-map-file", "optional path to a file containing guestPath=hostPath mappings for regular files to include in the initramfs")
 
 	flag.Parse()
 
-	if err := run(*initPath, *output, modules, files); err != nil {
+	if err := run(*initPath, *output, modules, files, fileSets); err != nil {
 		fmt.Fprintf(os.Stderr, "mkinitramfs: %v\n", err)
 		os.Exit(1)
 	}
@@ -42,6 +44,7 @@ func main() {
 
 type moduleFlags []string
 type fileFlags []string
+type fileSetFlags []string
 
 func (m *moduleFlags) String() string {
 	return strings.Join(*m, ",")
@@ -61,7 +64,16 @@ func (f *fileFlags) Set(value string) error {
 	return nil
 }
 
-func run(initPath string, output string, modules moduleFlags, files fileFlags) error {
+func (f *fileSetFlags) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *fileSetFlags) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+func run(initPath string, output string, modules moduleFlags, files fileFlags, fileSets fileSetFlags) error {
 	if initPath == "" {
 		return fmt.Errorf("-init-bin is required")
 	}
@@ -79,7 +91,12 @@ func run(initPath string, output string, modules moduleFlags, files fileFlags) e
 		return fmt.Errorf("stat init binary: %w", err)
 	}
 
-	extras, err := readExtraFiles(modules, files)
+	fileSpecs, err := expandFileSpecs(files, fileSets)
+	if err != nil {
+		return err
+	}
+
+	extras, err := readExtraFiles(modules, fileSpecs)
 	if err != nil {
 		return err
 	}
@@ -155,6 +172,24 @@ func readExtraFiles(moduleSpecs []string, fileSpecs []string) ([]archiveFile, er
 		})
 	}
 	return files, nil
+}
+
+func expandFileSpecs(inline []string, fileSets []string) ([]string, error) {
+	specs := append([]string{}, inline...)
+	for _, path := range fileSets {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read file map file %s: %w", path, err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			specs = append(specs, trimmed)
+		}
+	}
+	return specs, nil
 }
 
 func parseModuleSpec(spec string) (string, string, error) {

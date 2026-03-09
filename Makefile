@@ -1,6 +1,7 @@
 GO ?= go
 BUILD_DIR ?= build
 QEMU_BIN ?= qemu-system-x86_64
+SHELL := /bin/bash
 comma := ,
 KERNEL_IMAGE ?= $(shell find /boot -maxdepth 1 -name 'vmlinuz-*' -readable 2>/dev/null | sort | tail -n 1)
 QEMU_HOST_PORT ?= 8080
@@ -33,9 +34,11 @@ INITRAMFS_9PNET_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/net/9p/9pnet
 INITRAMFS_9PNET_VIRTIO_MODULE_SRC ?= /lib/modules/$(shell uname -r)/kernel/net/9p/9pnet_virtio.ko.zst
 INITRAMFS_ENABLE_CA_CERTS ?= 1
 INITRAMFS_CA_CERT_BUNDLE_SRC ?= /etc/ssl/certs/ca-certificates.crt
+INIT_CGO_ENABLED ?= 1
 
 INIT_BIN := $(BUILD_DIR)/init
 INITRAMFS := $(BUILD_DIR)/initramfs.cpio.gz
+INIT_RUNTIME_FILE_MAPS := $(BUILD_DIR)/init.runtime-file-maps.txt
 QEMU_RUN_STORAGE_ARGS := -drive file=$(QEMU_DATA_IMAGE),if=virtio,format=raw
 QEMU_RUN_SHARED_STATE_ARGS := -virtfs local$(comma)path=$(QEMU_SHARED_STATE_HOST_PATH)$(comma)mount_tag=$(QEMU_SHARED_STATE_MOUNT_TAG)$(comma)security_model=none$(comma)id=$(QEMU_SHARED_STATE_FSDEV_ID) -device virtio-9p-pci$(comma)fsdev=$(QEMU_SHARED_STATE_FSDEV_ID)$(comma)mount_tag=$(QEMU_SHARED_STATE_MOUNT_TAG)
 QEMU_RUN_RNG_ARGS := -object "$(QEMU_RNG_OBJECT)" -device "$(QEMU_RNG_DEVICE)"
@@ -85,10 +88,14 @@ clean:
 
 $(INIT_BIN): $(shell find cmd internal -type f -name '*.go')
 	mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags='-s -w' -o $(INIT_BIN) ./cmd/init
+	CGO_ENABLED=$(INIT_CGO_ENABLED) GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags='-s -w' -o $(INIT_BIN) ./cmd/init
 
-$(INITRAMFS): $(INIT_BIN)
+$(INIT_RUNTIME_FILE_MAPS): $(INIT_BIN) scripts/collect-elf-runtime.sh
+	./scripts/collect-elf-runtime.sh $(INIT_BIN) > $(INIT_RUNTIME_FILE_MAPS)
+
+$(INITRAMFS): $(INIT_BIN) $(INIT_RUNTIME_FILE_MAPS)
 	$(GO) run ./cmd/mkinitramfs -init-bin $(INIT_BIN) -output $(INITRAMFS) \
+		-file-map-file $(INIT_RUNTIME_FILE_MAPS) \
 		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_CA_CERTS)),-file-map "/etc/ssl/certs/ca-certificates.crt=$(INITRAMFS_CA_CERT_BUNDLE_SRC)") \
 		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_VIRTIO_RNG_MODULE)),-module-map "/lib/modules/virtio_rng.ko=$(INITRAMFS_VIRTIO_RNG_MODULE_SRC)") \
 		$(if $(filter 1 true yes on,$(INITRAMFS_ENABLE_9P_MODULES)),-module-map "/lib/modules/netfs.ko=$(INITRAMFS_NETFS_MODULE_SRC)" -module-map "/lib/modules/9p.ko=$(INITRAMFS_9P_MODULE_SRC)" -module-map "/lib/modules/9pnet.ko=$(INITRAMFS_9PNET_MODULE_SRC)" -module-map "/lib/modules/9pnet_virtio.ko=$(INITRAMFS_9PNET_VIRTIO_MODULE_SRC)")

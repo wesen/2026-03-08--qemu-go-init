@@ -148,12 +148,13 @@ Example:
 CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -o build/init-cgo-probe ./cmd/init
 file build/init-cgo-probe
 ldd build/init-cgo-probe
+./scripts/collect-elf-runtime.sh build/init-cgo-probe
 ```
 
 ### Example: boot after packaging shared libraries
 
 ```bash
-make run KERNEL_IMAGE=qemu-vmlinuz QEMU_HOST_PORT=18088 QEMU_SSH_HOST_PORT=10030
+make run INIT_CGO_ENABLED=1 KERNEL_IMAGE=qemu-vmlinuz QEMU_HOST_PORT=18088 QEMU_SSH_HOST_PORT=10030
 ```
 
 ### Example: verify persistence
@@ -162,6 +163,19 @@ make run KERNEL_IMAGE=qemu-vmlinuz QEMU_HOST_PORT=18088 QEMU_SSH_HOST_PORT=10030
 sqlite3 build/shared-state/chat/turns.db '.tables'
 sqlite3 build/shared-state/chat/timeline.db '.tables'
 sqlite3 build/shared-state/chat/logs.db 'select level, component, message from logs order by id desc limit 20;'
+```
+
+### Example: prove the dynamic guest still boots
+
+```bash
+make QEMU_DATA_IMAGE=build/data-cgo.img data-image
+make smoke \
+  INIT_CGO_ENABLED=1 \
+  KERNEL_IMAGE=qemu-vmlinuz \
+  QEMU_HOST_PORT=18090 \
+  QEMU_SSH_HOST_PORT=10032 \
+  QEMU_DATA_IMAGE=build/data-cgo.img \
+  QEMU_SHARED_STATE_HOST_PATH=build/shared-state-cgo
 ```
 
 ## Related
