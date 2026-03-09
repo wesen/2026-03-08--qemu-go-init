@@ -23,6 +23,12 @@ topics:
       description: SQLite database work
     - slug: tui
       description: Terminal user interfaces
+    - slug: debugging
+      description: Debugging and observability work
+    - slug: bubbletea
+      description: Bubble Tea terminal UI work
+    - slug: pinocchio
+      description: Pinocchio runtime and profile integration
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
