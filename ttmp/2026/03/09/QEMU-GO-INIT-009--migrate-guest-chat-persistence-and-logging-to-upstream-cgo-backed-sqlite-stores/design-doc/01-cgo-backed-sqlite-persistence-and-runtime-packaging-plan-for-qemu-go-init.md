@@ -245,16 +245,37 @@ That means the packaging pipeline is already proving the right shape for the lat
 
 ### Phase 2: Runtime State Layout
 
-Add a stable runtime directory layout under persistent/shared storage:
+The initial plan was to place all guest SQLite state under the shared `9p` mount. That is not what shipped. In live validation, `github.com/mattn/go-sqlite3` on the guest `9p` mount produced a real runtime failure:
 
 ```text
-/var/lib/go-init/shared/bbs
-/var/lib/go-init/shared/chat
+fatal: open log store: initialize log store: disk I/O error: invalid argument
+```
+
+So the final layout intentionally splits the state by ownership and filesystem semantics:
+
+```text
+/var/lib/go-init/shared/
+  bbs/
+    bbs.db
+  pinocchio/
+    config.yaml
+    profiles.yaml
+
+/var/lib/go-init/state/chat/
   turns.db
   timeline.db
   logs.db
-  qemu-host.log
+
+build/shared-state-*/chat/
+  qemu-host-logs.db
 ```
+
+Why this split matters:
+
+- `bbs.db` stays on the shared host directory because both the host-native BBS and the guest SSH BBS need to see the same board content.
+- `config.yaml` and `profiles.yaml` stay on the shared host directory so the guest can reuse the host Pinocchio configuration.
+- `turns.db`, `timeline.db`, and `logs.db` moved to the ext4-backed guest storage because the CGO-backed SQLite runtime needs a filesystem with stronger local-disk semantics than the guest `9p` mount provided here.
+- `qemu-host-logs.db` stays on the host side because QEMU serial logs are emitted by the host process, not by the guest.
 
 ### Phase 3: Chat Turn and Timeline Persistence
 
@@ -290,7 +311,7 @@ user prompt
 Pseudocode:
 
 ```go
-logStore := openLogStore("/var/lib/go-init/shared/chat/logs.db")
+logStore := openLogStore("/var/lib/go-init/state/chat/logs.db")
 writer := io.MultiWriter(os.Stdout, NewSQLiteLogWriter(logStore, "guest"))
 zerologOutput = writer
 stdlibLogger = log.New(writer, "", flags)
@@ -322,13 +343,13 @@ Mitigation:
 Mitigation:
 
 - guest-owned runtime DBs should not be opened concurrently by host-side tooling for writes
-- QEMU host log import can run against a separate DB or only when the VM is offline
+- QEMU host log import now targets a separate host-side DB, which avoids write contention with the guest-owned ext4 databases
 
 ## Open Questions
 
-- Should host QEMU logs be imported into the same `logs.db` file or a separate host-side DB?
-- Should we expose a `/api/debug/persistence` endpoint summarizing row counts and DB paths?
-- Do we want to preserve the ability to build a pure-Go guest for comparison, or fully replace it?
+- Host QEMU logs were intentionally kept in a separate host-side DB: `build/shared-state-*/chat/qemu-host-logs.db`.
+- The existing `/api/debug/aichat/runtime` and `/api/debug/logs/runtime` endpoints now provide the guest-side persistence counts and paths.
+- The repo currently defaults to the CGO guest build but still allows `INIT_CGO_ENABLED=0` as an override for comparison.
 
 ## References
 

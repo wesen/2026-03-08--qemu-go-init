@@ -1,7 +1,7 @@
 ---
 Title: Migrate guest chat persistence and logging to upstream CGO-backed SQLite stores
 Ticket: QEMU-GO-INIT-009
-Status: active
+Status: complete
 Topics:
     - go
     - qemu
@@ -14,7 +14,7 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-03-09T16:22:28.31991848-04:00
+LastUpdated: 2026-03-09T21:05:00-04:00
 WhatFor: "Track the migration from the current pure-Go guest runtime to a dynamically packaged CGO guest runtime that can reuse upstream Pinocchio SQLite turn and timeline stores and persist runtime logs."
 WhenToUse: "Use when implementing or reviewing CGO runtime packaging, SQLite-backed chat persistence, and host or guest log capture in qemu-go-init."
 ---
@@ -34,7 +34,7 @@ The goal is not just “store more things in SQLite.” The goal is to align the
 
 ## Status
 
-Current status: **active**
+Current status: **completed**
 
 Current slice plan:
 
@@ -43,6 +43,14 @@ Current slice plan:
 3. Reuse upstream Pinocchio turn and timeline SQLite stores inside the guest.
 4. Persist guest logs to SQLite and expose their status via HTTP.
 5. Capture host-side QEMU serial logs and import them into SQLite from the host side.
+
+Delivered state:
+
+- `build/init` now builds with `CGO_ENABLED=1` by default and boots successfully from initramfs with the staged loader and shared libraries.
+- Guest chat persistence now uses the upstream Pinocchio CGO-backed turn and timeline stores under `/var/lib/go-init/state/chat`.
+- Guest zerolog and stdlib log output now lands in `/var/lib/go-init/state/chat/logs.db`.
+- Host-side QEMU serial logs are imported into `build/shared-state-*/chat/qemu-host-logs.db`.
+- `/api/debug/aichat/runtime` and `/api/debug/logs/runtime` expose the guest persistence state and row counts needed for validation.
 
 ## Topics
 

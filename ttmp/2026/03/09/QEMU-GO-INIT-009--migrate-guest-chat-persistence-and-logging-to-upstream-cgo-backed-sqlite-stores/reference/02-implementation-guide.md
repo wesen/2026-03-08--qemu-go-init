@@ -79,11 +79,18 @@ build/
   shared-state/
     bbs/
       bbs.db
+    pinocchio/
+      config.yaml
+      profiles.yaml
+    chat/
+      qemu-host-logs.db
+
+/var/lib/go-init/
+  state/
     chat/
       turns.db
       timeline.db
       logs.db
-      qemu-host.log
 ```
 
 ### Required wiring for turns
@@ -108,7 +115,7 @@ router.AddHandler(
 ### Required wiring for logs
 
 ```go
-logStore, _ := logstore.Open("/var/lib/go-init/shared/chat/logs.db")
+logStore, _ := logstore.Open("/var/lib/go-init/state/chat/logs.db")
 writer := io.MultiWriter(os.Stdout, logStore.Writer("guest"))
 zerolog.Logger = zerolog.New(writer)
 pid1Logger := log.New(writer, "", log.LstdFlags|log.Lmicroseconds|log.LUTC)
@@ -160,9 +167,9 @@ make run INIT_CGO_ENABLED=1 KERNEL_IMAGE=qemu-vmlinuz QEMU_HOST_PORT=18088 QEMU_
 ### Example: verify persistence
 
 ```bash
-sqlite3 build/shared-state/chat/turns.db '.tables'
-sqlite3 build/shared-state/chat/timeline.db '.tables'
-sqlite3 build/shared-state/chat/logs.db 'select level, component, message from logs order by id desc limit 20;'
+curl -fsS http://127.0.0.1:18097/api/debug/aichat/runtime
+curl -fsS http://127.0.0.1:18097/api/debug/logs/runtime
+sqlite3 build/shared-state-cgo-009/chat/qemu-host-logs.db 'select count(*) from logs;'
 ```
 
 ### Example: prove the dynamic guest still boots
@@ -177,6 +184,39 @@ make smoke \
   QEMU_DATA_IMAGE=build/data-cgo.img \
   QEMU_SHARED_STATE_HOST_PATH=build/shared-state-cgo
 ```
+
+### Example: drive one real chat turn and confirm guest persistence counts
+
+```bash
+ssh -tt \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  -o PreferredAuthentications=none \
+  -o PubkeyAuthentication=no \
+  -o PasswordAuthentication=no \
+  -p 10039 \
+  127.0.0.1
+```
+
+Inside the BBS:
+
+- press `c` to enter AI chat
+- type a prompt
+- press `Tab` to submit
+- press `Ctrl+B` to return to the BBS
+
+Then confirm persistence:
+
+```bash
+curl -fsS http://127.0.0.1:18097/api/debug/aichat/runtime
+```
+
+Expected fields after one successful chat turn:
+
+- `turnsCount: 1`
+- `timelineConversationCount: 1`
+- `timelineVersionCount: 1`
+- `timelineEntityCount: 2`
 
 ## Related
 

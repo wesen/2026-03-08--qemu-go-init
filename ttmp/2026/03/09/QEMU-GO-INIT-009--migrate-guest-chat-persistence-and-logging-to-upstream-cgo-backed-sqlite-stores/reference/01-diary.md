@@ -280,3 +280,145 @@ Generated runtime map during validation:
 /lib/x86_64-linux-gnu/libc.so.6=/usr/lib/x86_64-linux-gnu/libc.so.6
 /lib64/ld-linux-x86-64.so.2=/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
 ```
+
+## Step 3: Wire the upstream turn and timeline stores and discover the 9p SQLite failure
+
+Once the dynamic guest runtime was proven, I moved to the real goal: stop using ad hoc guest persistence for chat and reuse the upstream Pinocchio CGO-backed SQLite stores. I added a local persistence bootstrap in [persistence.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/persistence.go), opened `turns.db` and `timeline.db` from the chat surface in [surface.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/surface.go), attached the turn persister with `SetTurnPersister`, and added `StepTimelinePersistFuncWithVersion` as an event-router handler on the `"chat"` topic.
+
+The first version used the shared `9p` mount because that looked like the most obvious “persistent” location from the project’s earlier architecture. That was wrong for this SQLite runtime. During live boot validation, the guest failed immediately with:
+
+```text
+fatal: open log store: initialize log store: disk I/O error: invalid argument
+```
+
+That error was extremely useful. It demonstrated that the real filesystem boundary matters. The guest `9p` share is appropriate for shared board content and configuration files, but it is not the right place for the guest-owned CGO-backed SQLite runtime in this system.
+
+### What I did
+
+- Added [persistence.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/persistence.go) to open the upstream turn and timeline stores.
+- Added [persistence_test.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/persistence_test.go) to confirm the databases materialize.
+- Updated [surface.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/surface.go) to:
+  - open the persistence resources
+  - install the turn persister
+  - install the timeline persistence handler
+- Threaded `ChatStateRoot` through:
+  - [model.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/bbsapp/model.go)
+  - [middleware.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/sshbbs/middleware.go)
+  - [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go)
+- Moved the guest chat state root to `/var/lib/go-init/state/chat` on the ext4-backed persistent volume in [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go).
+
+### Why
+
+- The user explicitly wanted the upstream SQLite stores, so the guest had to open the upstream Pinocchio stores rather than a local schema fork.
+- The live `9p` failure made it clear that host-shared board content and guest-owned chat runtime state should not live on the same filesystem path.
+
+### What worked
+
+- The upstream stores opened correctly on the ext4-backed guest storage.
+- The chat surface booted with the new persistence resources.
+- The repository kept the host/guest split clean:
+  - shared `9p` for BBS content and Pinocchio config
+  - ext4 for guest-owned turns, timeline, and logs
+
+### What didn’t work
+
+- The original `9p` placement for guest SQLite produced the disk I/O error shown above.
+- The first pass did not thread `ChatStateRoot` all the way through the SSH BBS model creation, so the guest could still silently build chat state from the wrong root until that path was fixed.
+
+## Step 4: Persist guest logs, expose runtime status, and import host QEMU logs
+
+After the turn and timeline stores were in place, I added a local SQLite log store in [store.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/logstore/store.go). The goal was not just “save logs somewhere.” The goal was to make PID 1, zerolog, and the chat runtime observable after the fact, even if a later boot or SSH session changed the visible terminal state.
+
+This slice also added the host-side QEMU serial log importer in [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/importqemulogs/main.go). That kept the host and guest responsibilities clean:
+
+- guest runtime logs go directly into `/var/lib/go-init/state/chat/logs.db`
+- host-emitted QEMU serial logs get imported after smoke completion into `build/shared-state-*/chat/qemu-host-logs.db`
+
+### What I did
+
+- Added [store.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/logstore/store.go) and [store_test.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/logstore/store_test.go).
+- Updated [config.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/zlog/config.go) so zerolog can target a custom writer.
+- Updated [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/init/main.go) to:
+  - open `logs.db`
+  - duplicate zerolog output to stdout and SQLite
+  - duplicate stdlib logger output to stdout and SQLite
+- Added `/api/debug/logs/runtime` in [site.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/webui/site.go).
+- Added the host importer in [main.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/cmd/importqemulogs/main.go).
+- Updated [qemu-smoke.sh](/home/manuel/code/wesen/2026-03-08--qemu-go-init/scripts/qemu-smoke.sh) so the smoke exit path imports the host-side QEMU log file automatically.
+
+### Validation
+
+- `go test ./internal/logstore ./cmd/importqemulogs -count=1`
+- `timeout 180s make smoke INIT_CGO_ENABLED=1 KERNEL_IMAGE=qemu-vmlinuz QEMU_HOST_PORT=18095 QEMU_SSH_HOST_PORT=10037 QEMU_DATA_IMAGE=build/data-cgo-009.img QEMU_SHARED_STATE_HOST_PATH=build/shared-state-cgo-009`
+- `sqlite3 build/shared-state-cgo-009/chat/qemu-host-logs.db 'select count(*) from logs;'`
+
+Observed host-side QEMU log import result:
+
+```text
+1118
+```
+
+Observed host-side QEMU log rows:
+
+```text
+qemu-host|info|qemu-system-x86_64: terminating on signal 15 from pid ...
+qemu-host|info|2026/03/09 20:50:38.666661 GET /healthz from 10.0.2.2:45316
+```
+
+## Step 5: Add runtime count visibility and validate a real persisted chat turn
+
+The final slice was about proving that the guest chat persistence was not only “configured.” I needed a direct runtime answer to: did a real SSH chat session create a final turn row and timeline rows? I first added row-count reporting to `/api/debug/aichat/runtime` in [debug.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/debug.go), then found and fixed two bugs in that debug path:
+
+- the first version opened SQLite in normal mode, which auto-created empty DB files during debug reads
+- the first version also dumped raw binary SQLite contents into the JSON response via `FileSnapshot.Raw`
+
+I fixed both by switching the count queries to read-only mode and suppressing raw snapshot bodies for binary files such as `.db`, `.wal`, and `.shm`.
+
+### What I did
+
+- Extended [debug.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/debug.go) with:
+  - `turnsCount`
+  - `timelineConversationCount`
+  - `timelineVersionCount`
+  - `timelineEntityCount`
+- Added a regression test in [debug_test.go](/home/manuel/code/wesen/2026-03-08--qemu-go-init/internal/aichat/debug_test.go) to make sure the debug count path does not create missing DBs or dump raw SQLite bytes.
+- Booted a fresh validation VM in `tmux` on ports `18097` and `10039`.
+- Opened one SSH session, entered AI chat with `c`, submitted a prompt with `Tab`, waited for completion, and returned to the BBS with `Ctrl+B`.
+
+### Validation
+
+Commands:
+
+```bash
+curl -fsS http://127.0.0.1:18097/api/debug/aichat/runtime
+curl -fsS http://127.0.0.1:18097/api/debug/logs/runtime
+```
+
+Observed guest persistence after one real chat turn:
+
+```text
+turnsCount: 1
+timelineConversationCount: 1
+timelineVersionCount: 1
+timelineEntityCount: 2
+```
+
+Observed guest log runtime status from the still-running CGO validation VM on port `18094`:
+
+```json
+{
+  "path": "/var/lib/go-init/state/chat/logs.db",
+  "exists": true,
+  "rows": 218
+}
+```
+
+### What I learned
+
+- The correct validation loop for this ticket is not just “the guest booted.” It is:
+  - boot
+  - create one real SSH chat turn
+  - inspect the runtime row counts
+  - inspect the guest log DB
+  - inspect the host QEMU log DB
+- Read-only debug queries matter for SQLite. A careless debug endpoint can mutate the system it is trying to observe.
