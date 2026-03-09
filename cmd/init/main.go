@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
 
+	"github.com/manuel/wesen/qemu-go-init/internal/aichat"
 	"github.com/manuel/wesen/qemu-go-init/internal/bbsstore"
 	"github.com/manuel/wesen/qemu-go-init/internal/boot"
 	"github.com/manuel/wesen/qemu-go-init/internal/entropy"
@@ -48,6 +50,10 @@ func main() {
 		boot.Halt(logger)
 	}
 	defer store.Close()
+	chatOptions := aichat.Options{
+		Title:     "qemu-go-init AI chat",
+		StateRoot: bbsRoot,
+	}
 	addr := boot.HTTPAddress()
 	sshService, err := sshapp.Start(logger, sshapp.LoadConfigFromEnv(), func() sshapp.Snapshot {
 		return sshapp.Snapshot{
@@ -78,6 +84,12 @@ func main() {
 		Entropy:         entropyResult,
 		VirtioRNGModule: moduleResult,
 		SSHStatus:       sshService.Status,
+		AIChatDebug: func(ctx context.Context) (any, error) {
+			return aichat.DebugSnapshot(ctx, chatOptions)
+		},
+		AIChatHTTPSProbe: func(ctx context.Context) (any, error) {
+			return aichat.ProbeProviderHTTPS(ctx, chatOptions)
+		},
 	})
 	if err != nil {
 		logger.Printf("fatal: build handler: %v", err)

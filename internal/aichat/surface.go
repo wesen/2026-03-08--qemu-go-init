@@ -19,7 +19,6 @@ import (
 	pinhelpers "github.com/go-go-golems/pinocchio/pkg/cmds/helpers"
 	pinui "github.com/go-go-golems/pinocchio/pkg/ui"
 	agentforwarder "github.com/go-go-golems/pinocchio/pkg/ui/forwarders/agent"
-	"github.com/go-go-golems/pinocchio/pkg/ui/profileswitch"
 	"github.com/manuel/wesen/qemu-go-init/internal/bbsstore"
 )
 
@@ -51,28 +50,12 @@ type Surface struct {
 }
 
 func New(store Store, options Options) (*Surface, error) {
-	configHome, profileRegistries, profileSlug, err := resolveRuntime(options)
+	details, err := loadRuntimeDetails(context.Background(), options)
 	if err != nil {
 		return nil, err
 	}
 
-	base, err := resolveBaseStepSettings(configHome)
-	if err != nil {
-		return nil, fmt.Errorf("resolve pinocchio base settings: %w", err)
-	}
-
-	manager, err := profileswitch.NewManagerFromSources(context.Background(), profileRegistries, base)
-	if err != nil {
-		return nil, fmt.Errorf("load pinocchio profiles: %w", err)
-	}
-	defer func() { _ = manager.Close() }()
-
-	resolved, err := manager.Switch(context.Background(), profileSlug)
-	if err != nil {
-		return nil, fmt.Errorf("resolve pinocchio profile %q: %w", profileSlug, err)
-	}
-
-	engine, err := enginefactory.NewEngineFromStepSettings(resolved.EffectiveStepSettings)
+	engine, err := enginefactory.NewEngineFromStepSettings(details.resolved.EffectiveStepSettings)
 	if err != nil {
 		return nil, fmt.Errorf("create pinocchio engine: %w", err)
 	}
@@ -84,7 +67,7 @@ func New(store Store, options Options) (*Surface, error) {
 
 	sink := middleware.NewWatermillSink(router.Publisher, "chat")
 	backend := pinui.NewEngineBackend(engine, sink)
-	seed, err := buildSeedTurn(store, options.StateRoot, resolved.SystemPrompt)
+	seed, err := buildSeedTurn(store, options.StateRoot, details.resolved.SystemPrompt)
 	if err != nil {
 		_ = router.Close()
 		return nil, err

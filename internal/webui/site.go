@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"io/fs"
@@ -22,14 +23,16 @@ import (
 var staticFiles embed.FS
 
 type Options struct {
-	ListenAddr      string
-	Mounts          []boot.MountResult
-	Storage         storage.Result
-	SharedState     sharedstate.Result
-	Network         networking.Result
-	Entropy         entropy.Result
-	VirtioRNGModule kmod.Result
-	SSHStatus       func() sshapp.Status
+	ListenAddr       string
+	Mounts           []boot.MountResult
+	Storage          storage.Result
+	SharedState      sharedstate.Result
+	Network          networking.Result
+	Entropy          entropy.Result
+	VirtioRNGModule  kmod.Result
+	SSHStatus        func() sshapp.Status
+	AIChatDebug      func(context.Context) (any, error)
+	AIChatHTTPSProbe func(context.Context) (any, error)
 }
 
 type statusResponse struct {
@@ -92,12 +95,49 @@ func NewHandler(options Options) (http.Handler, error) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		encoder := json.NewEncoder(w)
-		encoder.SetIndent("", "  ")
-		_ = encoder.Encode(status())
+		writeJSON(w, http.StatusOK, status())
+	})
+	mux.HandleFunc("/api/debug/aichat/runtime", func(w http.ResponseWriter, r *http.Request) {
+		if options.AIChatDebug == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]any{
+				"error": "aichat runtime debug is not configured",
+			})
+			return
+		}
+		payload, err := options.AIChatDebug(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, payload)
+	})
+	mux.HandleFunc("/api/debug/aichat/https-probe", func(w http.ResponseWriter, r *http.Request) {
+		if options.AIChatHTTPSProbe == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]any{
+				"error": "aichat HTTPS probe is not configured",
+			})
+			return
+		}
+		payload, err := options.AIChatHTTPSProbe(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, payload)
 	})
 
 	return mux, nil
+}
+
+func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(statusCode)
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	_ = encoder.Encode(payload)
 }
