@@ -8,11 +8,11 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dop251/goja"
 	"github.com/go-go-golems/bobatea/pkg/eventbus"
 	bobarepl "github.com/go-go-golems/bobatea/pkg/repl"
 	"github.com/go-go-golems/bobatea/pkg/timeline"
-	ggjengine "github.com/go-go-golems/go-go-goja/engine"
+	jsadapter "github.com/go-go-golems/go-go-goja/pkg/repl/adapters/bobatea"
+	jseval "github.com/go-go-golems/go-go-goja/pkg/repl/evaluators/javascript"
 	"github.com/manuel/wesen/qemu-go-init/internal/bbsstore"
 )
 
@@ -34,104 +34,14 @@ type messageRecord struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-type evaluator struct {
-	runtime *ggjengine.Runtime
-}
-
-func newEvaluator() (*evaluator, error) {
-	factory, err := ggjengine.NewBuilder().
-		WithModules(ggjengine.DefaultRegistryModules()).
-		Build()
-	if err != nil {
-		return nil, fmt.Errorf("build go-go-goja runtime factory: %w", err)
-	}
-
-	runtime, err := factory.NewRuntime(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("create go-go-goja runtime: %w", err)
-	}
-
-	return &evaluator{runtime: runtime}, nil
-}
-
-func (e *evaluator) EvaluateStream(ctx context.Context, code string, emit func(bobarepl.Event)) error {
-	result, err := e.evaluate(ctx, code)
-	if err != nil {
-		emit(bobarepl.Event{
-			Kind:  bobarepl.EventResultMarkdown,
-			Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)},
-		})
-		return nil
-	}
-	emit(bobarepl.Event{
-		Kind:  bobarepl.EventResultMarkdown,
-		Props: map[string]any{"markdown": result},
-	})
-	return nil
-}
-
-func (e *evaluator) GetPrompt() string {
-	return "js>"
-}
-
-func (e *evaluator) GetName() string {
-	return "JavaScript"
-}
-
-func (e *evaluator) SupportsMultiline() bool {
-	return true
-}
-
-func (e *evaluator) GetFileExtension() string {
-	return ".js"
-}
-
-func (e *evaluator) SetVariable(name string, value any) error {
-	_, err := e.runtime.Owner.Call(context.Background(), "set-variable:"+name, func(_ context.Context, vm *goja.Runtime) (any, error) {
-		return nil, vm.Set(name, value)
-	})
-	return err
-}
-
-func (e *evaluator) LoadScript(ctx context.Context, filename string, content string) error {
-	_, err := e.runtime.Owner.Call(ctx, "load-script:"+filename, func(_ context.Context, vm *goja.Runtime) (any, error) {
-		_, runErr := vm.RunString(content)
-		return nil, runErr
-	})
-	return err
-}
-
-func (e *evaluator) Close() error {
-	if e == nil || e.runtime == nil {
-		return nil
-	}
-	return e.runtime.Close(context.Background())
-}
-
-func (e *evaluator) evaluate(ctx context.Context, code string) (string, error) {
-	value, err := e.runtime.Owner.Call(ctx, "evaluate-js", func(_ context.Context, vm *goja.Runtime) (any, error) {
-		result, runErr := vm.RunString(code)
-		if runErr != nil {
-			return nil, runErr
-		}
-		if result == nil || goja.IsUndefined(result) {
-			return "undefined", nil
-		}
-		return result.String(), nil
-	})
-	if err != nil {
-		return "", err
-	}
-
-	rendered, ok := value.(string)
-	if !ok {
-		return fmt.Sprintf("%v", value), nil
-	}
-	return rendered, nil
+func newEvaluator() (*jsadapter.JavaScriptEvaluator, error) {
+	cfg := jseval.DefaultConfig()
+	cfg.EnableConsoleLog = false
+	return jsadapter.NewJavaScriptEvaluator(cfg)
 }
 
 type Surface struct {
-	evaluator *evaluator
+	evaluator *jsadapter.JavaScriptEvaluator
 	bus       *eventbus.Bus
 	model     *bobarepl.Model
 
@@ -157,10 +67,6 @@ func New(store Store, options Options) (*Surface, error) {
 	cfg.Title = "qemu-go-init JavaScript REPL"
 	cfg.Placeholder = "Try: 2 + 2, bbs.listMessages()[0], bbs.post(\"subject\", \"body\")"
 	cfg.EnableExternalEditor = false
-	cfg.Autocomplete.Enabled = false
-	cfg.HelpBar.Enabled = false
-	cfg.HelpDrawer.Enabled = false
-	cfg.CommandPalette.Enabled = false
 
 	if err := installGlobals(coreEvaluator, store, options); err != nil {
 		_ = coreEvaluator.Close()
@@ -212,7 +118,7 @@ func (s *Surface) Close() error {
 	return err
 }
 
-func installGlobals(evaluator *evaluator, store Store, options Options) error {
+func installGlobals(evaluator *jsadapter.JavaScriptEvaluator, store Store, options Options) error {
 	defaultAuthor := strings.TrimSpace(options.DefaultAuthor)
 	if defaultAuthor == "" {
 		defaultAuthor = "anonymous"
@@ -254,7 +160,7 @@ func installGlobals(evaluator *evaluator, store Store, options Options) error {
 		},
 	}
 	for name, value := range globals {
-		if err := evaluator.SetVariable(name, value); err != nil {
+		if err := evaluator.Core().SetVariable(name, value); err != nil {
 			return fmt.Errorf("install javascript global %s: %w", name, err)
 		}
 	}
@@ -276,7 +182,7 @@ globalThis.bbs = {
   }
 };
 `
-	if err := evaluator.LoadScript(context.Background(), "bbs-api.js", script); err != nil {
+	if err := evaluator.Core().LoadScript(context.Background(), "bbs-api.js", script); err != nil {
 		return fmt.Errorf("load bbs javascript api shim: %w", err)
 	}
 
