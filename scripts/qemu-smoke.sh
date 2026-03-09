@@ -12,6 +12,7 @@ SSH_GUEST_PORT=${SSH_GUEST_PORT:-2222}
 QEMU_MEMORY=${QEMU_MEMORY:-512}
 QEMU_APPEND=${QEMU_APPEND:-console=ttyS0 rdinit=/init}
 QEMU_LOG=${QEMU_LOG:-"${BUILD_DIR}/qemu-smoke.log"}
+QEMU_IMPORT_HOST_LOGS=${QEMU_IMPORT_HOST_LOGS:-1}
 QEMU_NET_MODEL=${QEMU_NET_MODEL:-virtio-net-pci}
 QEMU_PCAP=${QEMU_PCAP:-}
 QEMU_ENABLE_STORAGE=${QEMU_ENABLE_STORAGE:-1}
@@ -20,6 +21,7 @@ QEMU_ENABLE_SHARED_STATE=${QEMU_ENABLE_SHARED_STATE:-1}
 QEMU_SHARED_STATE_HOST_PATH=${QEMU_SHARED_STATE_HOST_PATH:-"${BUILD_DIR}/shared-state"}
 QEMU_SHARED_STATE_MOUNT_TAG=${QEMU_SHARED_STATE_MOUNT_TAG:-hostshare}
 QEMU_SHARED_STATE_FSDEV_ID=${QEMU_SHARED_STATE_FSDEV_ID:-hostsharefs}
+QEMU_HOST_LOG_DB=${QEMU_HOST_LOG_DB:-"${QEMU_SHARED_STATE_HOST_PATH}/chat/qemu-host-logs.db"}
 QEMU_ENABLE_VIRTIO_RNG=${QEMU_ENABLE_VIRTIO_RNG:-1}
 QEMU_RNG_OBJECT=${QEMU_RNG_OBJECT:-rng-random,id=rng0,filename=/dev/urandom}
 QEMU_RNG_DEVICE=${QEMU_RNG_DEVICE:-virtio-rng-pci,rng=rng0}
@@ -127,7 +129,23 @@ cleanup() {
     QEMU_PID=
   fi
 }
-trap cleanup EXIT
+
+import_qemu_log() {
+  case "${QEMU_IMPORT_HOST_LOGS,,}" in
+    1|true|yes|on)
+      if [[ -f "${QEMU_LOG}" ]]; then
+        mkdir -p "$(dirname "${QEMU_HOST_LOG_DB}")"
+        (cd "${ROOT_DIR}" && go run ./cmd/importqemulogs -input "${QEMU_LOG}" -db "${QEMU_HOST_LOG_DB}") >/dev/null
+      fi
+      ;;
+  esac
+}
+
+finish() {
+  cleanup
+  import_qemu_log
+}
+trap finish EXIT
 
 start_vm() {
   local label=$1

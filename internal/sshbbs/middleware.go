@@ -12,13 +12,14 @@ import (
 	"github.com/muesli/termenv"
 )
 
-func Middleware(store *bbsstore.Store) wish.Middleware {
+func Middleware(store *bbsstore.Store, chatStateRoot string) wish.Middleware {
 	return wishbubbletea.MiddlewareWithProgramHandler(func(sess ssh.Session) *tea.Program {
 		subtitle := fmt.Sprintf("SSH BBS for %s", fallback(sess.User(), "anonymous"))
 		model, err := bbsapp.New(store, bbsapp.Options{
 			Title:         "qemu-go-init bbs",
 			Subtitle:      subtitle,
 			StateRoot:     store.Root(),
+			ChatStateRoot: chatStateRoot,
 			DefaultAuthor: fallback(sess.User(), "anonymous"),
 		})
 		options := append([]tea.ProgramOption{tea.WithAltScreen()}, wishbubbletea.MakeOptions(sess)...)

@@ -28,9 +28,10 @@ func main() {
 	defer store.Close()
 
 	model, err := bbsapp.New(store, bbsapp.Options{
-		Title:     "qemu-go-init bbs",
-		Subtitle:  "Host-native Bubble Tea board",
-		StateRoot: store.Root(),
+		Title:         "qemu-go-init bbs",
+		Subtitle:      "Host-native Bubble Tea board",
+		StateRoot:     store.Root(),
+		ChatStateRoot: filepath.Join(filepath.Dir(store.Root()), "chat"),
 	})
 	if err != nil {
 		logger.Fatalf("create bbs app: %v", err)

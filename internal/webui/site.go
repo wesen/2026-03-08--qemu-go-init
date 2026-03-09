@@ -33,6 +33,7 @@ type Options struct {
 	SSHStatus        func() sshapp.Status
 	AIChatDebug      func(context.Context) (any, error)
 	AIChatHTTPSProbe func(context.Context) (any, error)
+	LogDebug         func(context.Context) (any, error)
 }
 
 type statusResponse struct {
@@ -121,6 +122,22 @@ func NewHandler(options Options) (http.Handler, error) {
 			return
 		}
 		payload, err := options.AIChatHTTPSProbe(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, payload)
+	})
+	mux.HandleFunc("/api/debug/logs/runtime", func(w http.ResponseWriter, r *http.Request) {
+		if options.LogDebug == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]any{
+				"error": "log runtime debug is not configured",
+			})
+			return
+		}
+		payload, err := options.LogDebug(r.Context())
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
 				"error": err.Error(),

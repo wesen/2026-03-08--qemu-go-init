@@ -1,8 +1,10 @@
 package aichat
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +24,7 @@ import (
 const (
 	defaultOpenAIBaseURL = "https://api.openai.com/v1"
 	maxBodyPreviewBytes  = 32 * 1024
+	maxRawSnapshotBytes  = 32 * 1024
 )
 
 type runtimeDetails struct {
@@ -80,6 +83,7 @@ type RuntimeDebugSnapshot struct {
 	GeneratedAt        string                   `json:"generatedAt"`
 	ConfigHome         string                   `json:"configHome"`
 	ConfigFile         FileSnapshot             `json:"configFile"`
+	Persistence        PersistenceDebugSnapshot `json:"persistence"`
 	ProfileRegistries  string                   `json:"profileRegistries"`
 	ProfileSlug        string                   `json:"profileSlug"`
 	RegistrySources    []RegistrySourceSnapshot `json:"registrySources"`
@@ -93,6 +97,19 @@ type RuntimeDebugSnapshot struct {
 	ProfileMetadata    map[string]any           `json:"profileMetadata,omitempty"`
 	EffectiveSettings  *aisettings.StepSettings `json:"effectiveSettings,omitempty"`
 	Provider           ProviderDebug            `json:"provider"`
+}
+
+type PersistenceDebugSnapshot struct {
+	Root                      string       `json:"root"`
+	ConversationID            string       `json:"conversationId"`
+	TurnsDB                   FileSnapshot `json:"turnsDb"`
+	TurnsCount                int64        `json:"turnsCount,omitempty"`
+	TurnsCountError           string       `json:"turnsCountError,omitempty"`
+	TimelineDB                FileSnapshot `json:"timelineDb"`
+	TimelineConversationCount int64        `json:"timelineConversationCount,omitempty"`
+	TimelineVersionCount      int64        `json:"timelineVersionCount,omitempty"`
+	TimelineEntityCount       int64        `json:"timelineEntityCount,omitempty"`
+	TimelineCountError        string       `json:"timelineCountError,omitempty"`
 }
 
 type HTTPTraceEvent struct {
@@ -139,10 +156,30 @@ func DebugSnapshot(ctx context.Context, options Options) (*RuntimeDebugSnapshot,
 		})
 	}
 
+	persistence := PersistenceDebugSnapshot{
+		Root:           defaultChatStateRoot(firstNonEmpty(options.ChatStateRoot, options.StateRoot)),
+		ConversationID: firstNonEmpty(options.ConversationID, defaultConversationID),
+		TurnsDB:        snapshotFile(filepath.Join(defaultChatStateRoot(firstNonEmpty(options.ChatStateRoot, options.StateRoot)), "turns.db")),
+		TimelineDB:     snapshotFile(filepath.Join(defaultChatStateRoot(firstNonEmpty(options.ChatStateRoot, options.StateRoot)), "timeline.db")),
+	}
+	if counts, err := queryTurnsCount(persistence.TurnsDB.Path); err != nil {
+		persistence.TurnsCountError = err.Error()
+	} else {
+		persistence.TurnsCount = counts
+	}
+	if counts, err := queryTimelineCounts(persistence.TimelineDB.Path); err != nil {
+		persistence.TimelineCountError = err.Error()
+	} else {
+		persistence.TimelineConversationCount = counts.Conversations
+		persistence.TimelineVersionCount = counts.Versions
+		persistence.TimelineEntityCount = counts.Entities
+	}
+
 	return &RuntimeDebugSnapshot{
 		GeneratedAt:        time.Now().UTC().Format(time.RFC3339),
 		ConfigHome:         details.configHome,
 		ConfigFile:         configFile,
+		Persistence:        persistence,
 		ProfileRegistries:  details.profileRegistries,
 		ProfileSlug:        details.profileSlug,
 		RegistrySources:    registrySources,
@@ -157,6 +194,73 @@ func DebugSnapshot(ctx context.Context, options Options) (*RuntimeDebugSnapshot,
 		EffectiveSettings:  details.resolved.EffectiveStepSettings,
 		Provider:           providerDebug(details.resolved.EffectiveStepSettings),
 	}, nil
+}
+
+type timelineCounts struct {
+	Conversations int64
+	Versions      int64
+	Entities      int64
+}
+
+func queryTurnsCount(path string) (int64, error) {
+	if strings.TrimSpace(path) == "" {
+		return 0, nil
+	}
+	db, err := openReadOnlySQLite(path)
+	if err != nil {
+		return 0, err
+	}
+	if db == nil {
+		return 0, nil
+	}
+	defer func() { _ = db.Close() }()
+
+	var count int64
+	if err := db.QueryRow(`SELECT COUNT(*) FROM turns`).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func queryTimelineCounts(path string) (timelineCounts, error) {
+	if strings.TrimSpace(path) == "" {
+		return timelineCounts{}, nil
+	}
+	db, err := openReadOnlySQLite(path)
+	if err != nil {
+		return timelineCounts{}, err
+	}
+	if db == nil {
+		return timelineCounts{}, nil
+	}
+	defer func() { _ = db.Close() }()
+
+	var counts timelineCounts
+	if err := db.QueryRow(`SELECT COUNT(*) FROM timeline_conversations`).Scan(&counts.Conversations); err != nil {
+		return timelineCounts{}, err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM timeline_versions`).Scan(&counts.Versions); err != nil {
+		return timelineCounts{}, err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM timeline_entities`).Scan(&counts.Entities); err != nil {
+		return timelineCounts{}, err
+	}
+	return counts, nil
+}
+
+func openReadOnlySQLite(path string) (*sql.DB, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	dsn := fmt.Sprintf("file:%s?mode=ro&_busy_timeout=5000", path)
+	return sql.Open("sqlite3", dsn)
 }
 
 func ProbeProviderHTTPS(ctx context.Context, options Options) (*HTTPSProbeResult, error) {
@@ -269,8 +373,21 @@ func snapshotFile(path string) FileSnapshot {
 		snapshot.Error = err.Error()
 		return snapshot
 	}
-	snapshot.Raw = string(body)
+	if shouldExposeRawSnapshot(path, body) {
+		snapshot.Raw = string(body)
+	}
 	return snapshot
+}
+
+func shouldExposeRawSnapshot(path string, body []byte) bool {
+	if len(body) == 0 || len(body) > maxRawSnapshotBytes {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".db", ".wal", ".shm", ".ko", ".img":
+		return false
+	}
+	return !bytes.Contains(body, []byte{0})
 }
 
 func providerDebug(settings *aisettings.StepSettings) ProviderDebug {

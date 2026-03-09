@@ -83,6 +83,44 @@ func TestProbeProviderHTTPSUsesResolvedSettings(t *testing.T) {
 	}
 }
 
+func TestPersistenceDebugDoesNotCreateOrDumpBinarySQLiteFiles(t *testing.T) {
+	root := t.TempDir()
+	missingDB := filepath.Join(root, "chat", "turns.db")
+
+	count, err := queryTurnsCount(missingDB)
+	if err != nil {
+		t.Fatalf("query turns count on missing db: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("turn count on missing db = %d, want 0", count)
+	}
+	if _, err := os.Stat(missingDB); !os.IsNotExist(err) {
+		t.Fatalf("missing db should not be created, stat err = %v", err)
+	}
+
+	persist, err := openPersistence(filepath.Join(root, "chat"), "")
+	if err != nil {
+		t.Fatalf("open persistence: %v", err)
+	}
+	defer func() { _ = persist.Close() }()
+
+	snapshot := snapshotFile(persist.turnsDBPath)
+	if !snapshot.Exists {
+		t.Fatalf("turn db should exist after openPersistence")
+	}
+	if snapshot.Raw != "" {
+		t.Fatalf("turn db raw snapshot should be omitted for binary sqlite files")
+	}
+
+	count, err = queryTurnsCount(persist.turnsDBPath)
+	if err != nil {
+		t.Fatalf("query turns count after openPersistence: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("turn count after openPersistence = %d, want 0", count)
+	}
+}
+
 func makeSharedPinocchioRuntime(t *testing.T, baseURL string) string {
 	t.Helper()
 	t.Setenv("GO_INIT_PINOCCHIO_CONFIG_HOME", "")

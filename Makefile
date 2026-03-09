@@ -43,7 +43,7 @@ QEMU_RUN_STORAGE_ARGS := -drive file=$(QEMU_DATA_IMAGE),if=virtio,format=raw
 QEMU_RUN_SHARED_STATE_ARGS := -virtfs local$(comma)path=$(QEMU_SHARED_STATE_HOST_PATH)$(comma)mount_tag=$(QEMU_SHARED_STATE_MOUNT_TAG)$(comma)security_model=none$(comma)id=$(QEMU_SHARED_STATE_FSDEV_ID) -device virtio-9p-pci$(comma)fsdev=$(QEMU_SHARED_STATE_FSDEV_ID)$(comma)mount_tag=$(QEMU_SHARED_STATE_MOUNT_TAG)
 QEMU_RUN_RNG_ARGS := -object "$(QEMU_RNG_OBJECT)" -device "$(QEMU_RNG_DEVICE)"
 
-.PHONY: build initramfs test run smoke clean data-image shared-state-dir pinocchio-shared-config
+.PHONY: build initramfs test run smoke clean data-image shared-state-dir pinocchio-shared-config import-qemu-log
 
 build: $(INIT_BIN)
 
@@ -80,6 +80,11 @@ smoke: $(INITRAMFS) $(if $(filter 1 true yes on,$(QEMU_ENABLE_STORAGE)),$(QEMU_D
 	QEMU_RNG_OBJECT='$(QEMU_RNG_OBJECT)' \
 	QEMU_RNG_DEVICE='$(QEMU_RNG_DEVICE)' \
 	./scripts/qemu-smoke.sh
+
+import-qemu-log:
+	test -n "$(QEMU_LOG)" || (echo "Set QEMU_LOG to a host-side QEMU log file" && false)
+	test -n "$(QEMU_HOST_LOG_DB)" || (echo "Set QEMU_HOST_LOG_DB to a sqlite destination path" && false)
+	$(GO) run ./cmd/importqemulogs -input "$(QEMU_LOG)" -db "$(QEMU_HOST_LOG_DB)"
 
 data-image: $(QEMU_DATA_IMAGE)
 

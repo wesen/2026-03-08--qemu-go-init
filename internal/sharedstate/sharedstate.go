@@ -113,10 +113,18 @@ func BBSRoot(result Result, fallbackRoot string) string {
 	return filepath.Join(fallbackRoot, "bbs")
 }
 
+func ChatRoot(result Result, fallbackRoot string) string {
+	if result.Mounted && result.MountPoint != "" {
+		return filepath.Join(result.MountPoint, "chat")
+	}
+	return filepath.Join(fallbackRoot, "chat")
+}
+
 func ensureDirectories(root string) ([]string, error) {
 	directories := []string{
 		filepath.Join(root, "bbs"),
 		filepath.Join(root, "bbs", "uploads"),
+		filepath.Join(root, "chat"),
 		filepath.Join(root, "pinocchio"),
 	}
 

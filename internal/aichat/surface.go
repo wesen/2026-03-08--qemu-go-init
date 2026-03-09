@@ -34,6 +34,8 @@ type Store interface {
 type Options struct {
 	Title             string
 	StateRoot         string
+	ChatStateRoot     string
+	ConversationID    string
 	ProfileSlug       string
 	ProfileRegistries string
 }
@@ -43,6 +45,7 @@ type Surface struct {
 	router  *events.EventRouter
 	model   tea.Model
 	seed    *turns.Turn
+	persist *persistenceResources
 
 	cancel     context.CancelFunc
 	attachOnce sync.Once
@@ -73,6 +76,16 @@ func New(store Store, options Options) (*Surface, error) {
 		return nil, err
 	}
 
+	persist, err := openPersistence(firstNonEmpty(options.ChatStateRoot, options.StateRoot), options.ConversationID)
+	if err != nil {
+		_ = router.Close()
+		return nil, err
+	}
+	if persister := newTurnStorePersister(persist.turnStore, persist.conversationID); persister != nil {
+		backend.SetTurnPersister(persister)
+	}
+	router.AddHandler("timeline-persist", "chat", pinui.StepTimelinePersistFuncWithVersion(persist.timelineStore, persist.conversationID, &persist.timelineVersion))
+
 	title := strings.TrimSpace(options.Title)
 	if title == "" {
 		title = defaultTitle
@@ -88,6 +101,7 @@ func New(store Store, options Options) (*Surface, error) {
 		router:  router,
 		model:   model,
 		seed:    seed,
+		persist: persist,
 	}, nil
 }
 
@@ -147,6 +161,11 @@ func (s *Surface) Close() error {
 		}
 		if s.router != nil {
 			err = s.router.Close()
+		}
+		if s.persist != nil {
+			if closeErr := s.persist.Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
 		}
 	})
 	return err
@@ -288,4 +307,13 @@ func min(a int, b int) int {
 		return a
 	}
 	return b
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

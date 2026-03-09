@@ -24,6 +24,7 @@ type Options struct {
 	Title         string
 	Subtitle      string
 	StateRoot     string
+	ChatStateRoot string
 	DefaultAuthor string
 }
 
@@ -92,8 +93,9 @@ func New(store Store, options Options) (*Model, error) {
 		return nil, fmt.Errorf("create javascript repl: %w", err)
 	}
 	chatSurface, chatErr := aichat.New(store, aichat.Options{
-		Title:     "qemu-go-init AI chat",
-		StateRoot: options.StateRoot,
+		Title:         "qemu-go-init AI chat",
+		StateRoot:     options.StateRoot,
+		ChatStateRoot: options.ChatStateRoot,
 	})
 
 	model := &Model{
