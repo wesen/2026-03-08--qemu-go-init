@@ -1,6 +1,6 @@
 # qemu-go-init
 
-`qemu-go-init` builds a statically linked Go `/init` binary, packs it into an initramfs, and boots it under QEMU so the guest serves an embedded webpage on port `8080`.
+`qemu-go-init` builds a Go `/init` binary, stages the runtime it needs into an initramfs, and boots it under QEMU so the guest serves an embedded webpage on port `8080`.
 
 The current runtime configures guest IPv4 networking in userspace with a Go DHCP client and Linux netlink calls, so it no longer depends on kernel `ip=dhcp` support.
 
