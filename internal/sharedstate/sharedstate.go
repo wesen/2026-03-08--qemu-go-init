@@ -117,6 +117,7 @@ func ensureDirectories(root string) ([]string, error) {
 	directories := []string{
 		filepath.Join(root, "bbs"),
 		filepath.Join(root, "bbs", "uploads"),
+		filepath.Join(root, "pinocchio"),
 	}
 
 	for _, directory := range directories {
